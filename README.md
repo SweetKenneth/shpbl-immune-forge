@@ -163,8 +163,9 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 
 ## Tenable status
 
-Prepared for submission to the Tenable CyberAgents Exchange. Submission does not imply review, approval,
-certification, validation, endorsement, or acceptance by Tenable.
+Submitted to the Tenable CyberAgents Exchange for review on September 12, 2026
+([pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169)).
+Submission does not imply review, approval, certification, validation, endorsement, or acceptance by Tenable.
 
 ## License
 
