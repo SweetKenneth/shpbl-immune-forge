@@ -42,7 +42,7 @@ necessarily uses the host process's stdin/stdout.
 6. Reject any candidate whose own replay still reports the attack succeeding. This proof gate is mandatory
    in `CIF/0.3`; a high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
-8. Score the baseline and each candidate on the same caller-defined fitness scale, then require a finite candidate score strictly above the explicit baseline fitness plus the configured margin.
+8. Only after the baseline attack is proven, score the baseline and each candidate on the same caller-defined fitness scale, then require a finite candidate score strictly above the explicit baseline fitness plus the configured margin.
 9. Record every candidate's cryptographic identity and gate evidence, including a machine-readable rejection reason when rejected.
 10. Return `PROMOTED` for at most the single highest-scoring candidate that cleared every gate.
 11. Seal the episode as a Merkle evidence root.
@@ -168,8 +168,9 @@ verifyEvidenceRoot(evidence);  // true
   what is worth defending.
 - **A compromised evaluator** — a rigged harness or a fitness function that rewards the wrong thing — produces
   sealed evidence of a bad decision. Sealing proves integrity, not wisdom.
-- Fitness semantics are yours. The data-driven API requires an explicit `baselineFitness`, and direct adapters
-  provide `baselineFitness()`, so the baseline and candidate scores share the evaluator-defined scale. The Forge
+- Fitness semantics are yours. Once the baseline attack is proven, the data-driven API requires an explicit
+  `baselineFitness`, and direct adapters provide `baselineFitness()`, so the baseline and candidate scores share
+  the evaluator-defined scale. Inconclusive baselines never invoke or require fitness scoring. The Forge
   enforces only "strictly better than baseline, by at least the configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
 - CIF verification without an independently retained expected root/head proves **internal semantic-and-hash consistency**, not
