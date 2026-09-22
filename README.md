@@ -7,7 +7,7 @@ The Counterfactual Immune Forge refuses to accept a patch from an incomplete obs
 supplied attack scenario, requires the reported baseline replay to show the current defense failing it,
 adjudicates each proposed change against **that same sealed scenario record**, forces every change through a
 regression gate, requires a positive, policy-defined reported improvement,
-and then seals the whole decision — including every rejected candidate and the reason it was rejected — as a
+and then seals the whole decision — including each candidate's identity hashes, observed gate evidence, and any rejection reason — as a
 SHA-256 Merkle evidence root that anyone can recompute later.
 
 It is a decision authority, not an actuator. It promotes nothing by itself, executes no candidate, reads no
@@ -19,8 +19,7 @@ necessarily uses the host process's stdin/stdout.
 - **Defense changes stop being undocumented trust-me changes.** Every `PROMOTED` verdict carries recomputable
   evidence of what the caller reported: baseline reproduction, candidate neutralization, protected-behaviour
   regression status, and score improvement.
-- **Rejections are preserved, not discarded.** The most useful review artifact is the list of fixes that
-  looked good and failed a gate — including the "fixed the attack, broke legitimate traffic" case.
+- **Rejection evidence is preserved, not discarded.** Candidate IDs/hashes, observed gate results, and rejection reasons remain in the sealed episode — including the "fixed the attack, broke legitimate traffic" case. Keep the original candidate artifact if you need to resolve a mutation/defense hash back to its full body.
 - **The scenario identity cannot move inside the Forge.** The scenario is canonicalized and hashed before any
   candidate is considered. Data-driven baseline and candidate replay observations must claim that same sealed
   hash; direct adapters receive the same sealed scenario object for every replay.
