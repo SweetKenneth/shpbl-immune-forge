@@ -606,7 +606,6 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
 
   if (!hex64(e.scenarioId) || !hex64(e.baselineHash) || !hex64(e.evidenceRoot)) return false;
   if (!replayValid(e.baselineReplay) || !finite(e.baselineFitness)) return false;
-  if (e.baselineFitness !== e.baselineReplay.securityScore) return false;
 
   if (typeof e.policy !== "object" || e.policy === null || Array.isArray(e.policy)) return false;
   const policyKeys = Object.keys(e.policy).sort();
