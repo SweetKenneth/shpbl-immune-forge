@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT
 import { adjudicateEpisode, type CandidateObservation, type EpisodeInput } from "./adjudicate.js";
 import {
+  MAX_CANDIDATES_PER_EPISODE,
   PROTOCOL,
   verifyEvidenceRoot,
   type EpisodeEvidence,
@@ -25,7 +26,7 @@ export const POLICY = {
   defaultRequiredFitnessMargin: 0,
   defaultRequireAttackReproduction: true,
   defaultRequireAttackNeutralized: true,
-  maxCandidatesPerEpisode: 256,
+  maxCandidatesPerEpisode: MAX_CANDIDATES_PER_EPISODE,
   maxLineageEntries: 10_000,
   maxRequestBytes: 1_048_576,
   rejectionReasons: [
