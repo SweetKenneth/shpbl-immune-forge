@@ -1,26 +1,51 @@
 {
   "name": "shpbl-counterfactual-immune-forge",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Proof-gated defense evolution: adjudicate candidate defensive mutations against a sealed attack scenario and seal every decision as verifiable evidence. MCP server plus TypeScript library.",
   "license": "MIT",
   "author": "Kenneth E. Sweet Jr. (SHPBL)",
   "homepage": "https://shpbl.com/tenable-submissions",
-  "repository": { "type": "git", "url": "git+https://github.com/SweetKenneth/shpbl-immune-forge.git" },
-  "bugs": { "url": "https://github.com/SweetKenneth/shpbl-immune-forge/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SweetKenneth/shpbl-immune-forge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SweetKenneth/shpbl-immune-forge/issues"
+  },
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "bin": {
     "shpbl-immune-forge-mcp": "./dist/src/mcp-server.js"
   },
-  "files": ["dist", "src", "SPEC.md", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "dist",
+    "src",
+    "SPEC.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/src/mcp-server.js"
+    "start": "node dist/src/mcp-server.js",
+    "prepack": "npm run build"
   },
-  "keywords": ["mcp", "security", "ai-agents", "evidence", "defense", "regression-gate", "shpbl"],
-  "devDependencies": { "@types/node": "^22.7.5", "typescript": "^5.6.3" }
+  "keywords": [
+    "mcp",
+    "security",
+    "ai-agents",
+    "evidence",
+    "defense",
+    "regression-gate",
+    "shpbl"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "typescript": "^5.6.3"
+  }
 }

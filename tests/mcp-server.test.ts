@@ -1,18 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHandler, createLineProcessor, handleRpc, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
+import { createHandler, createLineProcessor, handleRpc, parseEpisodeInput, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
 import { ImmuneLineage } from "../src/lineage.js";
+import { sealScenario } from "../src/core.js";
+
+const episodeScenario = { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" };
+const sealedScenarioId = sealScenario(episodeScenario).id!;
 
 const episode = {
-  scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
+  scenario: episodeScenario,
   baseline: { id: "guard", version: "1.0.0" },
-  baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineReplay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineFitness: 0.2,
   candidates: [
     {
       mutation: { id: "cand-a", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
       defense: { id: "guard", version: "1.1.0" },
       impact: { safe: true, reasons: [] },
-      replay: { reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+      replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
       regression: { passed: true, failures: [] },
       fitnessScore: 0.95,
     },
@@ -23,10 +28,43 @@ function parse(result: { content: { text: string }[] }): any {
   return JSON.parse(result.content[0].text);
 }
 
+async function initializeProcessor(
+  processor: ReturnType<typeof createLineProcessor>,
+  written: string[],
+): Promise<void> {
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: "init",
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "transport-test", version: "1.0.0" },
+    },
+  }) + "\n");
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+    params: {},
+  }) + "\n");
+  await processor.drain();
+  written.length = 0;
+}
+
 test("initialize, ping and tools/list answer the MCP handshake", async () => {
   const call = createHandler();
-  const init: any = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" }, call);
+  const init: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "test-client", version: "1.0.0" },
+    },
+  }, call);
   assert.equal(init.result.serverInfo.name, "shpbl-counterfactual-immune-forge");
+  assert.equal(init.result.protocolVersion, "2025-11-25");
   assert.deepEqual(Object.keys(init.result.capabilities), ["tools"]);
   const ping: any = await handleRpc({ jsonrpc: "2.0", id: 2, method: "ping" }, call);
   assert.deepEqual(ping.result, {});
@@ -36,6 +74,19 @@ test("initialize, ping and tools/list answer the MCP handshake", async () => {
     assert.ok(tool.description.length > 40, `${tool.name} needs a real description`);
     assert.equal(tool.inputSchema.type, "object");
   }
+});
+
+test("malformed initialize params fail closed", async () => {
+  const call = createHandler();
+  const missing: any = await handleRpc({ jsonrpc: "2.0", id: 101, method: "initialize" }, call);
+  assert.equal(missing.error.code, -32602);
+  const incomplete: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 102,
+    method: "initialize",
+    params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "x" } },
+  }, call);
+  assert.equal(incomplete.error.code, -32602);
 });
 
 test("notifications get no response and unknown methods error", async () => {
@@ -55,6 +106,9 @@ test("invalid JSON-RPC envelopes and unsupported batches fail explicitly", async
   const batch: any = await handleRpc([{ jsonrpc: "2.0", id: 6, method: "ping" }], call);
   assert.equal(batch.error.code, -32600);
   assert.equal(batch.id, null);
+  const badId: any = await handleRpc({ jsonrpc: "2.0", id: { nope: true }, method: "ping" }, call);
+  assert.equal(badId.error.code, -32600);
+  assert.equal(badId.id, null);
 });
 
 test("adjudication through the tool interface promotes, records lineage and verifies", async () => {
@@ -64,13 +118,41 @@ test("adjudication through the tool interface promotes, records lineage and veri
   assert.equal(out.evidence.verdict, "PROMOTED");
   assert.equal(out.lineageEntry.index, 0);
   const verified = parse(await call("verify_episode_evidence", { evidence: out.evidence }));
+  assert.equal(verified.internallyConsistent, true);
   assert.equal(verified.intact, true);
+  const anchored = parse(await call("verify_episode_evidence", {
+    evidence: out.evidence,
+    expectedRoot: out.evidence.evidenceRoot,
+  }));
+  assert.equal(anchored.matchesExpectedRoot, true);
+  assert.equal(anchored.intact, true);
+  const wrongAnchor = parse(await call("verify_episode_evidence", {
+    evidence: out.evidence,
+    expectedRoot: "0".repeat(64),
+  }));
+  assert.equal(wrongAnchor.internallyConsistent, true);
+  assert.equal(wrongAnchor.matchesExpectedRoot, false);
+  assert.equal(wrongAnchor.intact, false);
   const tampered = parse(await call("verify_episode_evidence", { evidence: { ...out.evidence, reason: "edited" } }));
   assert.equal(tampered.intact, false);
   const report = parse(await call("export_immune_lineage_report", {}));
   assert.equal(report.intact, true);
   const reverified = parse(await call("verify_immune_lineage", { entries: report.entries }));
+  assert.equal(reverified.internallyConsistent, true);
   assert.equal(reverified.intact, true);
+  const anchoredLineage = parse(await call("verify_immune_lineage", {
+    entries: report.entries,
+    expectedHeadHash: report.headHash,
+  }));
+  assert.equal(anchoredLineage.matchesExpectedHeadHash, true);
+  assert.equal(anchoredLineage.intact, true);
+  const wrongLineageAnchor = parse(await call("verify_immune_lineage", {
+    entries: report.entries,
+    expectedHeadHash: "f".repeat(64),
+  }));
+  assert.equal(wrongLineageAnchor.internallyConsistent, true);
+  assert.equal(wrongLineageAnchor.matchesExpectedHeadHash, false);
+  assert.equal(wrongLineageAnchor.intact, false);
   const cleared = parse(await call("reset_state", {}));
   assert.equal(cleared.reset, true);
   assert.equal(parse(await call("export_immune_lineage_report", {})).entries.length, 0);
@@ -95,9 +177,58 @@ test("duplicate candidate observations are refused as ambiguous evidence", async
   assert.match(sameId.content[0].text, /mutation\.id is not unique/);
 });
 
+
+test("stdio transport enforces the 2025-11-25 initialization lifecycle", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 201, method: "tools/list" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32002);
+
+  written.length = 0;
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 202,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "lifecycle-test", version: "1.0.0" },
+    },
+  }) + "\n");
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 203, method: "tools/list" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).id, 202);
+  assert.equal(JSON.parse(written[1]).error.code, -32002);
+
+  written.length = 0;
+  processor.push(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }) + "\n");
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 204, method: "tools/list" }) + "\n");
+  await processor.drain();
+  const ready = JSON.parse(written[0]);
+  assert.equal(ready.id, 204);
+  assert.ok(Array.isArray(ready.result.tools));
+
+  written.length = 0;
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 205,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "again", version: "1.0.0" },
+    },
+  }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32600);
+});
+
 test("queued requests are answered in arrival order", async () => {
   const written: string[] = [];
   const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  await initializeProcessor(processor, written);
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "adjudicate_defensive_mutation", arguments: episode } }) + "\n");
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\n{"); // trailing partial line
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }).slice(1) + "\n");
@@ -142,7 +273,8 @@ test("describe_policy publishes limits and the no-side-effect declaration", asyn
   assert.equal(policy.protocol, POLICY.protocol);
   assert.equal(policy.hash, "sha256");
   assert.ok(policy.sideEffects.startsWith("none"));
-  assert.equal(policy.defaultRequireAttackNeutralized, true);
+  assert.equal(policy.requireAttackNeutralized, true);
+  assert.equal(policy.requireAttackReproduction, true);
   assert.ok(policy.rejectionReasons.includes("ATTACK_NOT_NEUTRALIZED"));
   assert.equal(policy.tools.length, TOOLS.length);
 });
@@ -217,7 +349,7 @@ test("candidates that share a defense version are judged on their own replay", a
           mutation: { id: "cand-weak", description: "log only", patch: { rule: "log" } },
           defense: { id: "guard", version: "1.1.0" },
           impact: { safe: true, reasons: [] },
-          replay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+          replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
           regression: { passed: true, failures: [] },
           fitnessScore: 0.2,
         },
@@ -229,4 +361,161 @@ test("candidates that share a defense version are judged on their own replay", a
   assert.equal(weak.replay.attackSucceeded, true);
   assert.equal(weak.rejectedReason, "ATTACK_NOT_NEUTRALIZED");
   assert.equal(out.evidence.winnerId, "cand-a");
+});
+
+
+test("JSON __proto__ keys remain data and cannot mutate parser object prototypes", () => {
+  const payload = JSON.parse('{"__proto__":{"polluted":true},"safe":1}');
+  const changedScenario = { ...episodeScenario, payload };
+  const parsed = parseEpisodeInput({
+    ...episode,
+    scenario: changedScenario,
+    baselineReplay: {
+      ...episode.baselineReplay,
+      scenarioId: sealScenario(changedScenario).id!,
+    },
+    candidates: [],
+  });
+  const parsedPayload = parsed.scenario.payload as any;
+  assert.equal(Object.prototype.hasOwnProperty.call(parsedPayload, "__proto__"), true);
+  assert.equal(parsedPayload.__proto__.polluted, true);
+  assert.equal(({} as any).polluted, undefined);
+});
+
+test("advertised replay schemas require scenario binding", async () => {
+  const call = createHandler();
+  const list: any = await handleRpc({ jsonrpc: "2.0", id: 31, method: "tools/list" }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  assert.ok(tool.inputSchema.properties.baselineReplay.required.includes("scenarioId"));
+  const replayRequired = tool.inputSchema.properties.candidates.items.properties.replay.required;
+  assert.ok(replayRequired.includes("scenarioId"));
+});
+
+
+test("transport errors cannot leapfrog earlier queued requests", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push(
+    JSON.stringify({ jsonrpc: "2.0", id: 41, method: "ping" }) +
+      "\n" +
+      "x".repeat(POLICY.maxRequestBytes + 1) +
+      "\n",
+  );
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).id, 41);
+  assert.equal(JSON.parse(written[1]).error.code, -32600);
+});
+
+
+test("transport errors cannot overtake an earlier slow response", async () => {
+  const baseCall = createHandler();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const delayedCall = async (name: string, args: unknown) => {
+    if (name === "describe_policy") await gate;
+    return baseCall(name, args);
+  };
+  const written: string[] = [];
+  const processor = createLineProcessor(delayedCall, (line) => written.push(line.trim()));
+  await initializeProcessor(processor, written);
+
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 41,
+    method: "tools/call",
+    params: { name: "describe_policy", arguments: {} },
+  }) + "\n");
+  processor.push("x".repeat(POLICY.maxRequestBytes + 1));
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 42, method: "ping" }) + "\n");
+
+  await Promise.resolve();
+  assert.equal(written.length, 0);
+
+  release();
+  await processor.drain();
+
+  const parsed = written.map((line) => JSON.parse(line));
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0].id, 41);
+  assert.equal(parsed[1].id, null);
+  assert.equal(parsed[1].error.code, -32600);
+  assert.equal(parsed[2].id, 42);
+});
+
+
+test("MCP policy refuses attempts to disable mandatory proof gates", async () => {
+  const call = createHandler();
+  for (const policy of [
+    { requireAttackReproduction: false },
+    { requireAttackNeutralized: false },
+  ]) {
+    const result = await call("adjudicate_defensive_mutation", { ...episode, policy });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /not supported.*proof gates are mandatory/i);
+  }
+});
+
+
+test("complete whitespace-padded frames cannot bypass the raw request byte limit", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  const tiny = JSON.stringify({ jsonrpc: "2.0", id: 77, method: "ping" });
+  const padding = " ".repeat(POLICY.maxRequestBytes + 1);
+  processor.push(padding + tiny + "\n");
+  await processor.drain();
+  assert.equal(written.length, 1);
+  const response = JSON.parse(written[0]);
+  assert.equal(response.error.code, -32600);
+  assert.equal(response.id, null);
+});
+
+
+test("MCP inconclusive episodes may omit baselineFitness but qualifying episodes may not", async () => {
+  const call = createHandler();
+  const inconclusive = parse(await call("adjudicate_defensive_mutation", {
+    ...episode,
+    baselineFitness: undefined,
+    baselineReplay: {
+      scenarioId: sealedScenarioId,
+      reproduced: false,
+      attackSucceeded: false,
+      securityScore: 0.2,
+    },
+  }));
+  assert.equal(inconclusive.evidence.verdict, "INCONCLUSIVE");
+  assert.equal(inconclusive.evidence.baselineFitness, undefined);
+
+  const qualifying = await call("adjudicate_defensive_mutation", { ...episode, baselineFitness: undefined });
+  assert.equal(qualifying.isError, true);
+  assert.match(qualifying.content[0].text, /INVALID_BASELINE_FITNESS/);
+
+  const list: any = await handleRpc({ jsonrpc: "2.0", id: 141, method: "tools/list" }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  assert.equal(tool.inputSchema.required.includes("baselineFitness"), false);
+});
+
+
+test("advertised adjudication schema matches the strict runtime parser", async () => {
+  const call = createHandler();
+  const list: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 91,
+    method: "tools/list",
+  }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  const schema = tool.inputSchema;
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.scenario.additionalProperties, false);
+  assert.equal(schema.properties.baseline.additionalProperties, false);
+  assert.equal(schema.properties.baselineReplay.additionalProperties, false);
+
+  const candidate = schema.properties.candidates.items;
+  assert.equal(candidate.additionalProperties, false);
+  assert.equal(candidate.properties.mutation.additionalProperties, false);
+  assert.equal(candidate.properties.defense.additionalProperties, false);
+  assert.equal(candidate.properties.impact.additionalProperties, false);
+  assert.ok(candidate.properties.impact.required.includes("reasons"));
+  assert.equal(candidate.properties.replay.additionalProperties, false);
+  assert.equal(candidate.properties.regression.additionalProperties, false);
+  assert.ok(candidate.properties.regression.required.includes("failures"));
 });

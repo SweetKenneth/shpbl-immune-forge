@@ -7,21 +7,22 @@ The Counterfactual Immune Forge refuses to accept a patch from an incomplete obs
 supplied attack scenario, requires the reported baseline replay to show the current defense failing it,
 adjudicates each proposed change against **that same sealed scenario record**, forces every change through a
 regression gate, requires a positive, policy-defined reported improvement,
-and then seals the whole decision — including every rejected candidate and the reason it was rejected — as a
+and then seals the whole decision — including each candidate's identity hashes, observed gate evidence, and any rejection reason — as a
 SHA-256 Merkle evidence root that anyone can recompute later.
 
-It is a decision authority, not an actuator. It promotes nothing by itself, executes nothing, and touches no
-files, sockets, processes, or environment variables.
+It is a decision authority, not an actuator. It promotes nothing by itself, executes no candidate, reads no
+files, opens no network sockets, spawns no subprocesses, and reads no environment variables. Its stdio transport
+necessarily uses the host process's stdin/stdout.
 
 ## Why a practitioner would install this
 
 - **Defense changes stop being undocumented trust-me changes.** Every `PROMOTED` verdict carries recomputable
   evidence of what the caller reported: baseline reproduction, candidate neutralization, protected-behaviour
   regression status, and score improvement.
-- **Rejections are preserved, not discarded.** The most useful review artifact is the list of fixes that
-  looked good and failed a gate — including the "fixed the attack, broke legitimate traffic" case.
-- **Goalposts cannot move.** The scenario is canonicalized and hashed before any candidate is considered, and
-  the same sealed object is used for the baseline and every candidate replay.
+- **Rejection evidence is preserved, not discarded.** Candidate IDs/hashes, observed gate results, and rejection reasons remain in the sealed episode — including the "fixed the attack, broke legitimate traffic" case. Keep the original candidate artifact if you need to resolve a mutation/defense hash back to its full body.
+- **The scenario identity cannot move inside the Forge.** The scenario is canonicalized and hashed before any
+  candidate is considered. Data-driven baseline and candidate replay observations must claim that same sealed
+  hash; direct adapters receive the same sealed scenario object for every replay.
 - **The audit trail is hash-linked.** Every adjudicated episode is appended to an immune lineage whose links
   are verifiable independently of this server's memory.
 - **Nothing about it is model-dependent.** Reasoning about *what* to try can come from an agent, a fuzzer, a
@@ -29,18 +30,20 @@ files, sockets, processes, or environment variables.
 
 ## Protocol
 
-`CIF/0.2`, in order:
+`CIF/0.3`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
-2. Reproduce the baseline against it. If it does not reproduce → `INCONCLUSIVE`; no candidate is evaluated.
+2. Reproduce the baseline against it. Data-driven baseline evidence must carry the sealed scenario hash. The
+   baseline must both reproduce **and report the attack succeeding**; otherwise → `INCONCLUSIVE` and no candidate
+   is evaluated. This proof gate is mandatory in `CIF/0.3`.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
-5. Require each survivor's supplied replay observation to be bound to the *same sealed scenario*.
-6. Reject any candidate whose own replay still reports the attack succeeding (`requireAttackNeutralized`,
-   on by default). A high score cannot buy promotion for a change that did not stop the attack.
+5. Require each survivor's supplied replay observation to carry the hash of the *same sealed scenario*. A missing or mismatched binding fails the replay gate.
+6. Reject any candidate whose own replay still reports the attack succeeding. This proof gate is mandatory
+   in `CIF/0.3`; a high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
-8. Require a finite fitness score strictly above the baseline plus the configured margin.
-9. Record every rejected candidate with a machine-readable reason.
+8. Only after the baseline attack is proven, score the baseline and each candidate on the same caller-defined fitness scale, then require a finite candidate score strictly above the explicit baseline fitness plus the configured margin.
+9. Record every candidate's cryptographic identity and gate evidence, including a machine-readable rejection reason when rejected.
 10. Return `PROMOTED` for at most the single highest-scoring candidate that cleared every gate.
 11. Seal the episode as a Merkle evidence root.
 12. Run optional DREAM exploration **after** sealing, on the sealed evidence only. It cannot change the
@@ -49,9 +52,9 @@ files, sockets, processes, or environment variables.
 Rejection reasons: `IMPACT_SCREEN_FAILED`, `SCENARIO_REPLAY_FAILED`, `ATTACK_NOT_NEUTRALIZED`,
 `REGRESSION_GATE_FAILED`, `NO_PROVEN_IMPROVEMENT`. Verdicts: `PROMOTED`, `REJECTED`, `INCONCLUSIVE`.
 
-The gate settings in force (`requiredFitnessMargin`, `requireAttackReproduction`,
-`requireAttackNeutralized`) are sealed inside the evidence root, so a reader can see which gates produced a
-verdict and cannot silently restate them afterwards.
+The effective policy is sealed inside the evidence root. `requiredFitnessMargin` is configurable and
+non-negative; `requireAttackReproduction` and `requireAttackNeutralized` are recorded as `true` and cannot be
+disabled in `CIF/0.3`, so a reader can see exactly which invariants produced the verdict.
 
 Full behavioural contract: [`SPEC.md`](./SPEC.md).
 
@@ -68,7 +71,7 @@ git clone https://github.com/SweetKenneth/shpbl-immune-forge.git
 cd shpbl-immune-forge
 npm install      # devDependencies only: typescript, @types/node
 npm run build    # compiles to dist/
-   npm test         # 47 conformance, tamper, and boundary tests
+npm test         # conformance, tamper, adversarial, and boundary tests
 npm start        # starts the MCP server on stdio
 ```
 
@@ -88,10 +91,12 @@ MCP client configuration:
 ## Outputs
 
 Every tool returns JSON text content. `adjudicate_defensive_mutation` returns the verdict
-(`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the promoted candidate if any, every rejected candidate with its
-machine-readable reason, the sealed scenario hash, the SHA-256 Merkle evidence root, and the appended lineage
-entry. `verify_episode_evidence` and `verify_immune_lineage` return pass/fail integrity results,
-`export_immune_lineage_report` returns the hash-linked lineage plus verdict counts, and `describe_policy`
+(`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the winning candidate ID if any, each candidate's mutation/defense
+hashes and gate observations, machine-readable rejection reasons, the sealed scenario hash, the SHA-256 Merkle
+evidence root, and the appended lineage entry. `verify_episode_evidence` reports internal CIF/0.3 evidence semantic-and-hash consistency; `verify_immune_lineage`
+reports CIF-LINEAGE/0.1 entry-semantic and chain-hash consistency. Both can optionally compare against an
+independently retained expected evidence root / lineage head. `export_immune_lineage_report`
+returns the hash-linked lineage plus verdict counts, and `describe_policy`
 returns the versions, thresholds, input limits, and rejection-reason vocabulary in force. Nothing is written to
 disk and nothing is sent anywhere — the caller keeps whatever it chooses to keep.
 
@@ -101,31 +106,40 @@ disk and nothing is sent anywhere — the caller keeps whatever it chooses to ke
 | Tool | What it does |
 | --- | --- |
 | `adjudicate_defensive_mutation` | Adjudicates one episode from recorded observations and returns sealed evidence plus a lineage entry. |
-| `verify_episode_evidence` | Recomputes an episode's Merkle root and reports whether the covered bytes are unmodified. |
+| `verify_episode_evidence` | Recomputes an episode's Merkle root; optionally anchors it to an independently retained expected root. |
 | `export_immune_lineage_report` | Exports the hash-linked lineage of this session with verdict counts and an integrity flag. |
-| `verify_immune_lineage` | Verifies an exported lineage link by link, without trusting this session. |
+| `verify_immune_lineage` | Verifies lineage links and can optionally require an independently retained expected head hash. |
 | `describe_policy` | Publishes protocol versions, hash algorithm, gate defaults, input limits, and the no-side-effect declaration. |
 | `reset_state` | Clears session lineage. Previously exported reports stay independently verifiable. |
 
 The MCP surface is **data-driven**: your own harness runs the attack and the regression suite and reports what
-it observed. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
+it observed. Both baseline and candidate replay observations must include the sealed scenario hash returned by
+`sealScenario`; this binds the reporter's claim to the episode but does not prove that an external harness was honest. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
 never a pass. Library users who want the Forge to drive their harness directly can implement `ForgeAdapters`
 and call `CounterfactualImmuneForge.run()`.
 
 ## Library use
 
 ```ts
-import { adjudicateEpisode, verifyEvidenceRoot } from "shpbl-counterfactual-immune-forge";
+import { adjudicateEpisode, sealScenario, verifyEvidenceRoot } from "shpbl-counterfactual-immune-forge";
+
+const scenario = {
+  kind: "prompt-injection",
+  payload: { vector: "tool-arg" },
+  expectedSecurityProperty: "refuse untrusted tool instruction",
+};
+const scenarioId = sealScenario(scenario).id!;
 
 const evidence = await adjudicateEpisode({
-  scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
+  scenario,
   baseline: { id: "guard", version: "1.0.0" },
-  baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineReplay: { scenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineFitness: 0.2,
   candidates: [{
     mutation: { id: "quarantine", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
     defense: { id: "guard", version: "1.1.0" },
     impact: { safe: true, reasons: [] },
-    replay: { reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+    replay: { scenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
     regression: { passed: true, failures: [] },
     fitnessScore: 0.95,
   }],
@@ -141,11 +155,12 @@ verifyEvidenceRoot(evidence);  // true
   what a promotion was based on.
 - **Does not protect against** an operator who ignores the verdict, or a harness that reports observations
   dishonestly. Garbage in is sealed as garbage — verifiably, and attributable to the reporter.
-- **Refuses** filesystem, network, process, and environment access entirely, so it cannot be repurposed as an
-  offensive or surveillance tool. It never generates exploits and never applies changes to a live system.
+- **Refuses** application-level filesystem reads/writes, network sockets, subprocess spawning, and environment-variable
+  reads, so it cannot be repurposed as an offensive or surveillance tool. The stdio transport uses only stdin/stdout.
+  It never generates exploits and never applies changes to a live system.
 - **Input limits** are published by `describe_policy`: 256 candidates per episode, 10,000 lineage entries per
-  verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
-  unknown-verdict values. Duplicate observations of one mutation/defense pair are refused rather than
+  session/export/verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
+  unknown-verdict values. Duplicate observations of one mutation/defense pair and duplicate explicit mutation IDs are refused rather than
   collapsed, and requests are answered strictly in arrival order.
 
 ## Honest limitations
@@ -154,10 +169,17 @@ verifyEvidenceRoot(evidence);  // true
   what is worth defending.
 - **A compromised evaluator** — a rigged harness or a fitness function that rewards the wrong thing — produces
   sealed evidence of a bad decision. Sealing proves integrity, not wisdom.
-- Fitness semantics are yours. The Forge only enforces "strictly better than baseline, by at least the
-  configured margin".
+- Fitness semantics are yours. Once the baseline attack is proven, the data-driven API requires an explicit
+  `baselineFitness`, and direct adapters provide `baselineFitness()`, so the baseline and candidate scores share
+  the evaluator-defined scale. Inconclusive baselines never invoke or require fitness scoring. The Forge
+  enforces only "strictly better than baseline, by at least the configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
-- Verification proves the evidence bytes are unmodified; it does not prove the observations were true.
+- Evidence/lineage verification without an independently retained expected root/head proves **internal protocol-and-hash consistency**, not
+  historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
+  self-consistent artifact. Supply `expectedRoot` / `expectedHeadHash` when you need an external anchor.
+- Verification never proves the reported observations were true.
+- Episode evidence stores candidate IDs plus mutation/defense hashes, not full candidate bodies. Retain the original
+  candidate definitions if later review must inspect their exact patch/state content.
 
 ## Provenance
 
@@ -174,8 +196,8 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and initially merged as
 [pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169). Tenable later removed the listing
 in [pull request #187](https://github.com/tenable/cyberagents-exchange/pull/187) during its post-merge review. The
-listing is not currently published by the Exchange. Version 0.2.0 closed the promotion-soundness defect found
-in the original release; version 0.2.1 adds transport and submission-structure hardening.
+listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.3.0 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
+immutability, lineage-state, and verification-anchor gaps found during adversarial review.
 Past or future listing status does not imply review, approval, certification, validation, or endorsement of
 this software by Tenable.
 

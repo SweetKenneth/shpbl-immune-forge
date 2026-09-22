@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT
 import { adjudicateEpisode, type CandidateObservation, type EpisodeInput } from "./adjudicate.js";
 import {
+  MAX_CANDIDATES_PER_EPISODE,
   PROTOCOL,
   verifyEvidenceRoot,
   type EpisodeEvidence,
@@ -12,21 +13,28 @@ import {
   type RegressionResult,
   type ReplayResult,
 } from "./core.js";
-import { ImmuneLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
+import {
+  ImmuneLineage,
+  MAX_LINEAGE_ENTRIES,
+  summarizeLineage,
+  verifyLineage,
+  type LineageEntry,
+  type LineageReport,
+} from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
-export const SERVER_VERSION = "0.2.1";
-const MCP_PROTOCOL_VERSION = "2024-11-05";
+export const SERVER_VERSION = "0.3.0";
+const MCP_PROTOCOL_VERSION = "2025-11-25";
 
 export const POLICY = {
   protocol: PROTOCOL,
   lineageProtocol: "CIF-LINEAGE/0.1",
   hash: "sha256",
   defaultRequiredFitnessMargin: 0,
-  defaultRequireAttackReproduction: true,
-  defaultRequireAttackNeutralized: true,
-  maxCandidatesPerEpisode: 256,
-  maxLineageEntries: 10_000,
+  requireAttackReproduction: true,
+  requireAttackNeutralized: true,
+  maxCandidatesPerEpisode: MAX_CANDIDATES_PER_EPISODE,
+  maxLineageEntries: MAX_LINEAGE_ENTRIES,
   maxRequestBytes: 1_048_576,
   rejectionReasons: [
     "IMPACT_SCREEN_FAILED",
@@ -46,6 +54,13 @@ function obj(value: unknown, field: string): Record<string, unknown> {
     throw new InputError(`${field} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+function exactObj(value: unknown, field: string, allowed: readonly string[]): Record<string, unknown> {
+  const r = obj(value, field);
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(r).find((key) => !allowedSet.has(key));
+  if (unknown !== undefined) throw new InputError(`${field}.${unknown} is not supported`);
+  return r;
 }
 function str(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) throw new InputError(`${field} must be a non-empty string`);
@@ -80,7 +95,13 @@ function json(value: unknown, field: string): Json {
       seen.add(v);
       const out: { [k: string]: Json } = {};
       for (const [k, item] of Object.entries(v as Record<string, unknown>)) {
-        if (item !== undefined) out[k] = walk(item, `${path}.${k}`, depth + 1);
+        if (item === undefined) continue;
+        Object.defineProperty(out, k, {
+          value: walk(item, `${path}.${k}`, depth + 1),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       return out;
     }
@@ -90,8 +111,9 @@ function json(value: unknown, field: string): Json {
 }
 
 function replay(value: unknown, field: string): ReplayResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["scenarioId", "reproduced", "attackSucceeded", "securityScore", "state", "trace"]);
   return {
+    ...(r.scenarioId === undefined ? {} : { scenarioId: str(r.scenarioId, `${field}.scenarioId`) }),
     reproduced: bool(r.reproduced, `${field}.reproduced`),
     attackSucceeded: bool(r.attackSucceeded, `${field}.attackSucceeded`),
     securityScore: num(r.securityScore, `${field}.securityScore`),
@@ -100,40 +122,43 @@ function replay(value: unknown, field: string): ReplayResult {
   };
 }
 function impact(value: unknown, field: string): ImpactResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["safe", "reasons", "riskScore"]);
   return {
     safe: bool(r.safe, `${field}.safe`),
-    reasons: strArray(r.reasons ?? [], `${field}.reasons`),
+    reasons: strArray(r.reasons, `${field}.reasons`),
     ...(r.riskScore === undefined ? {} : { riskScore: num(r.riskScore, `${field}.riskScore`) }),
   };
 }
 function regression(value: unknown, field: string): RegressionResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["passed", "failures", "score"]);
   return {
     passed: bool(r.passed, `${field}.passed`),
-    failures: strArray(r.failures ?? [], `${field}.failures`),
+    failures: strArray(r.failures, `${field}.failures`),
     ...(r.score === undefined ? {} : { score: num(r.score, `${field}.score`) }),
   };
 }
 
 export function parseEpisodeInput(raw: unknown): EpisodeInput {
-  const a = obj(raw, "arguments");
-  const scenarioRaw = obj(a.scenario, "scenario");
-  const baselineRaw = obj(a.baseline, "baseline");
+  const a = exactObj(raw, "arguments", ["scenario", "baseline", "baselineReplay", "baselineFitness", "diagnosis", "candidates", "policy"]);
+  const scenarioRaw = exactObj(a.scenario, "scenario", ["kind", "payload", "expectedSecurityProperty"]);
+  const baselineRaw = exactObj(a.baseline, "baseline", ["id", "version", "state"]);
   const candidatesRaw = a.candidates ?? [];
   if (!Array.isArray(candidatesRaw)) throw new InputError("candidates must be an array");
   if (candidatesRaw.length > POLICY.maxCandidatesPerEpisode) {
     throw new InputError(`candidates exceeds ${POLICY.maxCandidatesPerEpisode} entries`);
   }
   const candidates: CandidateObservation[] = candidatesRaw.map((c, i) => {
-    const cr = obj(c, `candidates[${i}]`);
-    const mr = obj(cr.mutation, `candidates[${i}].mutation`);
-    const dr = obj(cr.defense, `candidates[${i}].defense`);
+    const cr = exactObj(c, `candidates[${i}]`, ["mutation", "defense", "impact", "replay", "regression", "fitnessScore"]);
+    const mr = exactObj(cr.mutation, `candidates[${i}].mutation`, ["id", "description", "patch"]);
+    const dr = exactObj(cr.defense, `candidates[${i}].defense`, ["id", "version", "state"]);
+    if (!Object.prototype.hasOwnProperty.call(mr, "patch")) {
+      throw new InputError(`candidates[${i}].mutation.patch is required`);
+    }
     return {
       mutation: {
         ...(mr.id === undefined ? {} : { id: str(mr.id, `candidates[${i}].mutation.id`) }),
         description: str(mr.description, `candidates[${i}].mutation.description`),
-        patch: json(mr.patch ?? null, `candidates[${i}].mutation.patch`),
+        patch: json(mr.patch, `candidates[${i}].mutation.patch`),
       },
       defense: {
         id: str(dr.id, `candidates[${i}].defense.id`),
@@ -162,10 +187,20 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
     }
   });
   const policyRaw = a.policy === undefined ? {} : obj(a.policy, "policy");
+  for (const key of Object.keys(policyRaw)) {
+    if (key !== "requiredFitnessMargin") {
+      throw new InputError(`policy.${key} is not supported; CIF/0.3 proof gates are mandatory`);
+    }
+  }
   return {
     scenario: {
       kind: str(scenarioRaw.kind, "scenario.kind"),
-      payload: json(scenarioRaw.payload ?? null, "scenario.payload"),
+      payload: (() => {
+        if (!Object.prototype.hasOwnProperty.call(scenarioRaw, "payload")) {
+          throw new InputError("scenario.payload is required");
+        }
+        return json(scenarioRaw.payload, "scenario.payload");
+      })(),
       expectedSecurityProperty: str(
         scenarioRaw.expectedSecurityProperty,
         "scenario.expectedSecurityProperty",
@@ -177,28 +212,17 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
       ...(baselineRaw.state === undefined ? {} : { state: json(baselineRaw.state, "baseline.state") }),
     },
     baselineReplay: replay(a.baselineReplay, "baselineReplay"),
+    ...(a.baselineFitness === undefined ? {} : { baselineFitness: num(a.baselineFitness, "baselineFitness") }),
     ...(a.diagnosis === undefined ? {} : { diagnosis: json(a.diagnosis, "diagnosis") }),
     candidates,
     policy: {
       ...(policyRaw.requiredFitnessMargin === undefined
         ? {}
-        : { requiredFitnessMargin: num(policyRaw.requiredFitnessMargin, "policy.requiredFitnessMargin") }),
-      ...(policyRaw.requireAttackReproduction === undefined
-        ? {}
-        : {
-            requireAttackReproduction: bool(
-              policyRaw.requireAttackReproduction,
-              "policy.requireAttackReproduction",
-            ),
-          }),
-      ...(policyRaw.requireAttackNeutralized === undefined
-        ? {}
-        : {
-            requireAttackNeutralized: bool(
-              policyRaw.requireAttackNeutralized,
-              "policy.requireAttackNeutralized",
-            ),
-          }),
+        : { requiredFitnessMargin: (() => {
+            const margin = num(policyRaw.requiredFitnessMargin, "policy.requiredFitnessMargin");
+            if (margin < 0) throw new InputError("policy.requiredFitnessMargin must be non-negative");
+            return margin;
+          })() }),
     },
   };
 }
@@ -249,26 +273,31 @@ export const TOOLS = [
       "Adjudicate one defensive-mutation episode from recorded observations: impact screen, same-scenario replay, mandatory regression gates and positive fitness delta, then seal the decision as a Merkle evidence root. Executes nothing and promotes nothing on its own.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       required: ["scenario", "baseline", "baselineReplay"],
       properties: {
         scenario: {
           type: "object",
-          required: ["kind", "expectedSecurityProperty"],
+          additionalProperties: false,
+          required: ["kind", "payload", "expectedSecurityProperty"],
           properties: {
-            kind: { type: "string" },
+            kind: { type: "string", minLength: 1, maxLength: 4096 },
             payload: {},
-            expectedSecurityProperty: { type: "string" },
+            expectedSecurityProperty: { type: "string", minLength: 1, maxLength: 4096 },
           },
         },
         baseline: {
           type: "object",
+          additionalProperties: false,
           required: ["id", "version"],
-          properties: { id: { type: "string" }, version: { type: "string" }, state: {} },
+          properties: { id: { type: "string", minLength: 1, maxLength: 4096 }, version: { type: "string", minLength: 1, maxLength: 4096 }, state: {} },
         },
         baselineReplay: {
           type: "object",
-          required: ["reproduced", "attackSucceeded", "securityScore"],
+          additionalProperties: false,
+          required: ["scenarioId", "reproduced", "attackSucceeded", "securityScore"],
           properties: {
+            scenarioId: { type: "string", minLength: 1, maxLength: 4096 },
             reproduced: { type: "boolean" },
             attackSucceeded: { type: "boolean" },
             securityScore: { type: "number" },
@@ -276,27 +305,40 @@ export const TOOLS = [
             trace: {},
           },
         },
+        baselineFitness: { type: "number" },
         diagnosis: {},
         candidates: {
           type: "array",
           maxItems: POLICY.maxCandidatesPerEpisode,
           items: {
             type: "object",
+            additionalProperties: false,
             required: ["mutation", "defense", "impact"],
             properties: {
               mutation: {
                 type: "object",
-                required: ["description"],
-                properties: { id: { type: "string" }, description: { type: "string" }, patch: {} },
+                additionalProperties: false,
+                required: ["description", "patch"],
+                properties: {
+                  id: { type: "string", minLength: 1, maxLength: 4096 },
+                  description: { type: "string", minLength: 1, maxLength: 4096 },
+                  patch: {},
+                },
               },
               defense: {
                 type: "object",
+                additionalProperties: false,
                 required: ["id", "version"],
-                properties: { id: { type: "string" }, version: { type: "string" }, state: {} },
+                properties: {
+                  id: { type: "string", minLength: 1, maxLength: 4096 },
+                  version: { type: "string", minLength: 1, maxLength: 4096 },
+                  state: {},
+                },
               },
               impact: {
                 type: "object",
-                required: ["safe"],
+                additionalProperties: false,
+                required: ["safe", "reasons"],
                 properties: {
                   safe: { type: "boolean" },
                   reasons: { type: "array", items: { type: "string" } },
@@ -305,8 +347,10 @@ export const TOOLS = [
               },
               replay: {
                 type: "object",
-                required: ["reproduced", "attackSucceeded", "securityScore"],
+                additionalProperties: false,
+                required: ["scenarioId", "reproduced", "attackSucceeded", "securityScore"],
                 properties: {
+                  scenarioId: { type: "string", minLength: 1, maxLength: 4096 },
                   reproduced: { type: "boolean" },
                   attackSucceeded: { type: "boolean" },
                   securityScore: { type: "number" },
@@ -316,7 +360,8 @@ export const TOOLS = [
               },
               regression: {
                 type: "object",
-                required: ["passed"],
+                additionalProperties: false,
+                required: ["passed", "failures"],
                 properties: {
                   passed: { type: "boolean" },
                   failures: { type: "array", items: { type: "string" } },
@@ -329,10 +374,9 @@ export const TOOLS = [
         },
         policy: {
           type: "object",
+          additionalProperties: false,
           properties: {
-            requiredFitnessMargin: { type: "number" },
-            requireAttackReproduction: { type: "boolean" },
-            requireAttackNeutralized: { type: "boolean" },
+            requiredFitnessMargin: { type: "number", minimum: 0 },
           },
         },
       },
@@ -341,11 +385,14 @@ export const TOOLS = [
   {
     name: "verify_episode_evidence",
     description:
-      "Recompute the Merkle evidence root of a sealed episode and report whether the covered bytes are unmodified.",
+      "Recompute the Merkle evidence root of a sealed episode. Optionally compare it to an independently retained expected root; without one, verification proves internal consistency only.",
     inputSchema: {
       type: "object",
       required: ["evidence"],
-      properties: { evidence: { type: "object" } },
+      properties: {
+        evidence: { type: "object" },
+        expectedRoot: { type: "string" },
+      },
     },
   },
   {
@@ -356,11 +403,15 @@ export const TOOLS = [
   },
   {
     name: "verify_immune_lineage",
-    description: "Verify an exported lineage entry list link by link without trusting this session's state.",
+    description:
+      "Verify an exported lineage entry list link by link. Optionally compare the computed head to an independently retained expected head hash.",
     inputSchema: {
       type: "object",
       required: ["entries"],
-      properties: { entries: { type: "array", items: { type: "object" } } },
+      properties: {
+        entries: { type: "array", items: { type: "object" } },
+        expectedHeadHash: { type: "string" },
+      },
     },
   },
   {
@@ -395,7 +446,17 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
         }
         case "verify_episode_evidence": {
           const evidence = parseEvidence(args);
-          return ok({ evidenceRoot: evidence.evidenceRoot, intact: verifyEvidenceRoot(evidence) });
+          const raw = obj(args, "arguments");
+          const expectedRoot = raw.expectedRoot === undefined ? undefined : str(raw.expectedRoot, "expectedRoot");
+          const internallyConsistent = verifyEvidenceRoot(evidence);
+          const matchesExpectedRoot =
+            expectedRoot === undefined ? undefined : evidence.evidenceRoot === expectedRoot;
+          return ok({
+            evidenceRoot: evidence.evidenceRoot,
+            internallyConsistent,
+            ...(expectedRoot === undefined ? {} : { expectedRoot, matchesExpectedRoot }),
+            intact: verifyEvidenceRoot(evidence, expectedRoot),
+          });
         }
         case "export_immune_lineage_report": {
           const report: LineageReport = lineage.report();
@@ -403,7 +464,21 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
         }
         case "verify_immune_lineage": {
           const entries = parseLineageEntries(args);
-          return ok({ entryCount: entries.length, intact: verifyLineage(entries) });
+          const raw = obj(args, "arguments");
+          const expectedHeadHash =
+            raw.expectedHeadHash === undefined ? undefined : str(raw.expectedHeadHash, "expectedHeadHash");
+          const summary = summarizeLineage(entries);
+          const internallyConsistent = verifyLineage(entries);
+          const matchesExpectedHeadHash =
+            expectedHeadHash === undefined ? undefined : summary.headHash === expectedHeadHash;
+          return ok({
+            entryCount: entries.length,
+            headHash: summary.headHash,
+            counts: summary.counts,
+            internallyConsistent,
+            ...(expectedHeadHash === undefined ? {} : { expectedHeadHash, matchesExpectedHeadHash }),
+            intact: verifyLineage(entries, expectedHeadHash),
+          });
         }
         case "describe_policy":
           return ok({ server: SERVER_NAME, version: SERVER_VERSION, ...POLICY, tools: TOOLS.map((t) => t.name) });
@@ -425,6 +500,22 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
   };
 }
 
+
+function validInitializeParams(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const p = value as Record<string, unknown>;
+  if (typeof p.protocolVersion !== "string" || p.protocolVersion.length === 0) return false;
+  if (typeof p.capabilities !== "object" || p.capabilities === null || Array.isArray(p.capabilities)) return false;
+  if (typeof p.clientInfo !== "object" || p.clientInfo === null || Array.isArray(p.clientInfo)) return false;
+  const info = p.clientInfo as Record<string, unknown>;
+  return (
+    typeof info.name === "string" &&
+    info.name.length > 0 &&
+    typeof info.version === "string" &&
+    info.version.length > 0
+  );
+}
+
 interface RpcRequest {
   jsonrpc?: string;
   id?: number | string | null;
@@ -440,8 +531,16 @@ export async function handleRpc(
     return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } };
   }
   const rpc = request as RpcRequest;
-  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
-    const invalidId = typeof rpc.id === "string" || typeof rpc.id === "number" || rpc.id === null ? rpc.id : null;
+  const idIsValid =
+    rpc.id === undefined ||
+    rpc.id === null ||
+    typeof rpc.id === "string" ||
+    (typeof rpc.id === "number" && Number.isFinite(rpc.id));
+  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string" || !idIsValid) {
+    const invalidId =
+      typeof rpc.id === "string" || (typeof rpc.id === "number" && Number.isFinite(rpc.id)) || rpc.id === null
+        ? rpc.id
+        : null;
     return { jsonrpc: "2.0", id: invalidId, error: { code: -32600, message: "invalid request" } };
   }
   const { id, method, params } = rpc;
@@ -449,6 +548,9 @@ export async function handleRpc(
   const reply = (result: unknown) => ({ jsonrpc: "2.0", id, result });
   switch (method) {
     case "initialize":
+      if (!validInitializeParams(params)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid initialize params" } };
+      }
       return reply({
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {} },
@@ -464,8 +566,15 @@ export async function handleRpc(
     case "prompts/list":
       return reply({ prompts: [] });
     case "tools/call": {
-      const name = typeof params?.name === "string" ? params.name : "";
-      return reply(await callTool(name, params?.arguments ?? {}));
+      if (typeof params !== "object" || params === null || Array.isArray(params)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid tools/call params" } };
+      }
+      const name = typeof params.name === "string" && params.name.length > 0 ? params.name : "";
+      const args = params.arguments ?? {};
+      if (!name || typeof args !== "object" || args === null || Array.isArray(args)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid tools/call params" } };
+      }
+      return reply(await callTool(name, args));
     }
     default:
       return { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } };
@@ -482,15 +591,66 @@ export function createLineProcessor(
 ) {
   let buffer = "";
   let chain: Promise<void> = Promise.resolve();
+  let lifecycle: "new" | "awaiting-initialized" | "ready" = "new";
   const emit = (value: unknown) => write(JSON.stringify(value) + "\n");
+  const queueResponse = (value: unknown): void => {
+    chain = chain.then(async () => {
+      emit(value);
+    });
+  };
   const queue = (line: string): void => {
     chain = chain.then(async () => {
-      let response: Record<string, unknown> | undefined;
+      let request: unknown;
       try {
-        response = await handleRpc(JSON.parse(line), callTool);
+        request = JSON.parse(line);
       } catch {
-        response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
+        emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
+        return;
       }
+
+      if (typeof request !== "object" || request === null || Array.isArray(request)) {
+        const response = await handleRpc(request, callTool);
+        if (response) emit(response);
+        return;
+      }
+
+      const rpc = request as RpcRequest;
+      const validId =
+        rpc.id === undefined ||
+        rpc.id === null ||
+        typeof rpc.id === "string" ||
+        (typeof rpc.id === "number" && Number.isFinite(rpc.id));
+      if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string" || !validId) {
+        const response = await handleRpc(request, callTool);
+        if (response) emit(response);
+        return;
+      }
+
+      if (rpc.id === undefined) {
+        if (rpc.method === "notifications/initialized" && lifecycle === "awaiting-initialized") {
+          lifecycle = "ready";
+        }
+        await handleRpc(request, callTool);
+        return;
+      }
+
+      if (rpc.method === "initialize") {
+        if (lifecycle !== "new") {
+          emit({ jsonrpc: "2.0", id: rpc.id, error: { code: -32600, message: "server already initialized" } });
+          return;
+        }
+        const response = await handleRpc(request, callTool);
+        if (response && "result" in response) lifecycle = "awaiting-initialized";
+        if (response) emit(response);
+        return;
+      }
+
+      if (lifecycle !== "ready") {
+        emit({ jsonrpc: "2.0", id: rpc.id, error: { code: -32002, message: "Server not initialized" } });
+        return;
+      }
+
+      const response = await handleRpc(request, callTool);
       if (response) emit(response);
     });
   };
@@ -499,11 +659,12 @@ export function createLineProcessor(
       buffer += chunk;
       let index = buffer.indexOf("\n");
       while (index !== -1) {
-        const line = buffer.slice(0, index).trim();
+        const rawLine = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
+        const line = rawLine.trim();
         if (line) {
-          if (Buffer.byteLength(line, "utf8") > POLICY.maxRequestBytes) {
-            emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+          if (Buffer.byteLength(rawLine, "utf8") > POLICY.maxRequestBytes) {
+            queueResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
           } else {
             queue(line);
           }
@@ -512,7 +673,7 @@ export function createLineProcessor(
       }
       if (Buffer.byteLength(buffer, "utf8") > POLICY.maxRequestBytes) {
         buffer = "";
-        emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+        queueResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
       }
     },
     drain(): Promise<void> {
