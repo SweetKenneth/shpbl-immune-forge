@@ -585,6 +585,33 @@ export class CounterfactualImmuneForge {
 }
 
 
+function isStrictJsonRepresentation(value: unknown, ancestors = new WeakSet<object>()): boolean {
+  if (value === undefined) return false;
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (ancestors.has(value)) return false;
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, i) || !isStrictJsonRepresentation(value[i], ancestors)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      if (!isStrictJsonRepresentation((value as Record<string, unknown>)[key], ancestors)) return false;
+    }
+    return true;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
   const hex64 = (value: unknown): value is string =>
     typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
@@ -774,6 +801,7 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
 
 export function verifyEvidenceRoot(e: EpisodeEvidence, expectedRoot?: string): boolean {
   if (!e || typeof e !== "object" || Array.isArray(e)) return false;
+  if (!isStrictJsonRepresentation(e)) return false;
   const allowedTopLevel = new Set([
     "protocol",
     "scenarioId",
