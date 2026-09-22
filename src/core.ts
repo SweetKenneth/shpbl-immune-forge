@@ -1,4 +1,4 @@
-// Counterfactual Immune Forge — CIF/0.2 proof-gated defense promotion engine.
+// Counterfactual Immune Forge — CIF/0.3 proof-gated defense promotion engine.
 // SPDX-License-Identifier: MIT
 import { createHash } from "node:crypto";
 
@@ -139,30 +139,26 @@ export interface EpisodeEvidence {
 export interface ForgePolicy {
   /** Minimum fitness the candidate must exceed the baseline by. Default 0 (strictly greater). */
   requiredFitnessMargin?: number;
-  /** When true (default) an episode whose baseline does not reproduce is INCONCLUSIVE. */
-  requireAttackReproduction?: boolean;
-  /**
-   * When true (default) a candidate whose own replay still reports the attack succeeding is
-   * rejected as ATTACK_NOT_NEUTRALIZED, whatever fitness the caller scored it. Set false only
-   * when your fitness semantics deliberately reward partial mitigation.
-   */
-  requireAttackNeutralized?: boolean;
 }
 
 export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
+  const raw = policy as ForgePolicy & {
+    requireAttackReproduction?: unknown;
+    requireAttackNeutralized?: unknown;
+  };
+  if (raw.requireAttackReproduction !== undefined || raw.requireAttackNeutralized !== undefined) {
+    throw new TypeError(
+      "CIF_IMMUTABLE_PROOF_GATES: baseline reproduction and candidate neutralization are mandatory in CIF/0.3",
+    );
+  }
   const requiredFitnessMargin = policy.requiredFitnessMargin ?? 0;
-  const requireAttackReproduction = policy.requireAttackReproduction ?? true;
-  const requireAttackNeutralized = policy.requireAttackNeutralized ?? true;
   if (!Number.isFinite(requiredFitnessMargin) || requiredFitnessMargin < 0) {
     throw new RangeError("CIF_INVALID_POLICY: requiredFitnessMargin must be a finite non-negative number");
   }
-  if (typeof requireAttackReproduction !== "boolean" || typeof requireAttackNeutralized !== "boolean") {
-    throw new TypeError("CIF_INVALID_POLICY: attack gate settings must be booleans");
-  }
   return {
     requiredFitnessMargin,
-    requireAttackReproduction,
-    requireAttackNeutralized,
+    requireAttackReproduction: true,
+    requireAttackNeutralized: true,
   };
 }
 
@@ -356,7 +352,7 @@ export class CounterfactualImmuneForge {
     const baseline = immutableSnapshot(input.baseline);
     const baselineHash = hash(baseline);
     const baselineReplay = validateReplayResult(await this.adapters.replay(scenario, baseline), scenario.id!);
-    if (policy.requireAttackReproduction && !baselineReplay.reproduced) {
+    if (!baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
         scenarioId: scenario.id!,
@@ -369,7 +365,7 @@ export class CounterfactualImmuneForge {
         policy,
       });
     }
-    if (policy.requireAttackReproduction && !baselineReplay.attackSucceeded) {
+    if (!baselineReplay.attackSucceeded) {
       return this.finish({
         protocol: PROTOCOL,
         scenarioId: scenario.id!,
@@ -435,7 +431,7 @@ export class CounterfactualImmuneForge {
         continue;
       }
       // A candidate that still lets the sealed attack succeed cannot be promoted on score alone.
-      if (policy.requireAttackNeutralized && ev.replay.attackSucceeded) {
+      if (ev.replay.attackSucceeded) {
         ev.rejectedReason = "ATTACK_NOT_NEUTRALIZED";
         evidence.push(ev);
         continue;
