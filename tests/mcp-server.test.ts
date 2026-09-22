@@ -178,7 +178,8 @@ test("describe_policy publishes limits and the no-side-effect declaration", asyn
   assert.equal(policy.protocol, POLICY.protocol);
   assert.equal(policy.hash, "sha256");
   assert.ok(policy.sideEffects.startsWith("none"));
-  assert.equal(policy.defaultRequireAttackNeutralized, true);
+  assert.equal(policy.requireAttackNeutralized, true);
+  assert.equal(policy.requireAttackReproduction, true);
   assert.ok(policy.rejectionReasons.includes("ATTACK_NOT_NEUTRALIZED"));
   assert.equal(policy.tools.length, TOOLS.length);
 });
@@ -343,4 +344,17 @@ test("transport errors cannot overtake an earlier slow response", async () => {
   assert.equal(parsed[1].id, null);
   assert.equal(parsed[1].error.code, -32600);
   assert.equal(parsed[2].id, 42);
+});
+
+
+test("MCP policy refuses attempts to disable mandatory proof gates", async () => {
+  const call = createHandler();
+  for (const policy of [
+    { requireAttackReproduction: false },
+    { requireAttackNeutralized: false },
+  ]) {
+    const result = await call("adjudicate_defensive_mutation", { ...episode, policy });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /not supported.*proof gates are mandatory/i);
+  }
 });
