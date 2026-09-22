@@ -146,13 +146,18 @@ export interface ForgePolicy {
 
 export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
   const requiredFitnessMargin = policy.requiredFitnessMargin ?? 0;
+  const requireAttackReproduction = policy.requireAttackReproduction ?? true;
+  const requireAttackNeutralized = policy.requireAttackNeutralized ?? true;
   if (!Number.isFinite(requiredFitnessMargin) || requiredFitnessMargin < 0) {
     throw new RangeError("CIF_INVALID_POLICY: requiredFitnessMargin must be a finite non-negative number");
   }
+  if (typeof requireAttackReproduction !== "boolean" || typeof requireAttackNeutralized !== "boolean") {
+    throw new TypeError("CIF_INVALID_POLICY: attack gate settings must be booleans");
+  }
   return {
     requiredFitnessMargin,
-    requireAttackReproduction: policy.requireAttackReproduction ?? true,
-    requireAttackNeutralized: policy.requireAttackNeutralized ?? true,
+    requireAttackReproduction,
+    requireAttackNeutralized,
   };
 }
 
