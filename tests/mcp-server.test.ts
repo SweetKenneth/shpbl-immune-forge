@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHandler, createLineProcessor, handleRpc, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
 import { ImmuneLineage } from "../src/lineage.js";
+import { sealScenario } from "../src/core.js";
+
+const episodeScenario = { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" };
+const sealedScenarioId = sealScenario(episodeScenario).id!;
 
 const episode = {
-  scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
+  scenario: episodeScenario,
   baseline: { id: "guard", version: "1.0.0" },
   baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
   candidates: [
@@ -12,7 +16,7 @@ const episode = {
       mutation: { id: "cand-a", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
       defense: { id: "guard", version: "1.1.0" },
       impact: { safe: true, reasons: [] },
-      replay: { reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+      replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
       regression: { passed: true, failures: [] },
       fitnessScore: 0.95,
     },
@@ -217,7 +221,7 @@ test("candidates that share a defense version are judged on their own replay", a
           mutation: { id: "cand-weak", description: "log only", patch: { rule: "log" } },
           defense: { id: "guard", version: "1.1.0" },
           impact: { safe: true, reasons: [] },
-          replay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+          replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
           regression: { passed: true, failures: [] },
           fitnessScore: 0.2,
         },
