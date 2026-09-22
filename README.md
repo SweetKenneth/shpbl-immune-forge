@@ -159,7 +159,7 @@ verifyEvidenceRoot(evidence);  // true
   reads, so it cannot be repurposed as an offensive or surveillance tool. The stdio transport uses only stdin/stdout.
   It never generates exploits and never applies changes to a live system.
 - **Input limits** are published by `describe_policy`: 256 candidates per episode, 10,000 lineage entries per
-  verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
+  session/export/verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
   unknown-verdict values. Duplicate observations of one mutation/defense pair and duplicate explicit mutation IDs are refused rather than
   collapsed, and requests are answered strictly in arrival order.
 
