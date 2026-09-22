@@ -28,6 +28,29 @@ function parse(result: { content: { text: string }[] }): any {
   return JSON.parse(result.content[0].text);
 }
 
+async function initializeProcessor(
+  processor: ReturnType<typeof createLineProcessor>,
+  written: string[],
+): Promise<void> {
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: "init",
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "transport-test", version: "1.0.0" },
+    },
+  }) + "\n");
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+    params: {},
+  }) + "\n");
+  await processor.drain();
+  written.length = 0;
+}
+
 test("initialize, ping and tools/list answer the MCP handshake", async () => {
   const call = createHandler();
   const init: any = await handleRpc({
@@ -154,9 +177,58 @@ test("duplicate candidate observations are refused as ambiguous evidence", async
   assert.match(sameId.content[0].text, /mutation\.id is not unique/);
 });
 
+
+test("stdio transport enforces the 2025-11-25 initialization lifecycle", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 201, method: "tools/list" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32002);
+
+  written.length = 0;
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 202,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "lifecycle-test", version: "1.0.0" },
+    },
+  }) + "\n");
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 203, method: "tools/list" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).id, 202);
+  assert.equal(JSON.parse(written[1]).error.code, -32002);
+
+  written.length = 0;
+  processor.push(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }) + "\n");
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 204, method: "tools/list" }) + "\n");
+  await processor.drain();
+  const ready = JSON.parse(written[0]);
+  assert.equal(ready.id, 204);
+  assert.ok(Array.isArray(ready.result.tools));
+
+  written.length = 0;
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 205,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "again", version: "1.0.0" },
+    },
+  }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32600);
+});
+
 test("queued requests are answered in arrival order", async () => {
   const written: string[] = [];
   const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  await initializeProcessor(processor, written);
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "adjudicate_defensive_mutation", arguments: episode } }) + "\n");
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\n{"); // trailing partial line
   processor.push(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }).slice(1) + "\n");
@@ -345,6 +417,7 @@ test("transport errors cannot overtake an earlier slow response", async () => {
   };
   const written: string[] = [];
   const processor = createLineProcessor(delayedCall, (line) => written.push(line.trim()));
+  await initializeProcessor(processor, written);
 
   processor.push(JSON.stringify({
     jsonrpc: "2.0",
