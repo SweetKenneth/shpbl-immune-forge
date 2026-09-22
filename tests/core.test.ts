@@ -194,3 +194,20 @@ test("a non-finite fitness score is never sealed into evidence", async () => {
   assert.equal(r.candidates[0].fitness, undefined);
   assert.equal(verifyEvidenceRoot(r), true);
 });
+
+
+test("baseline reproduction without a successful attack is inconclusive", async () => {
+  const a = adapters();
+  a.replay = async () => ({ reproduced: true, attackSucceeded: false, securityScore: 0.2 });
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "INCONCLUSIVE");
+  assert.equal(r.reason, "BASELINE_ATTACK_NOT_SUCCESSFUL");
+  assert.equal(r.candidates.length, 0);
+});
+
+test("negative fitness margins cannot weaken the positive-improvement invariant", () => {
+  assert.throws(
+    () => new CounterfactualImmuneForge(adapters(), { requiredFitnessMargin: -0.5 }),
+    /CIF_INVALID_POLICY/,
+  );
+});
