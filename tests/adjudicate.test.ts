@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { adjudicateEpisode, type EpisodeInput } from "../src/adjudicate.js";
-import { sealScenario, verifyEvidenceRoot } from "../src/core.js";
+import { hash, sealScenario, verifyEvidenceRoot } from "../src/core.js";
 import { ImmuneLineage, verifyLineage } from "../src/lineage.js";
 
 const episodeScenario = { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" };
@@ -252,4 +252,20 @@ test("data-driven qualifying baselines still require baselineFitness", async () 
     () => adjudicateEpisode({ ...base, baselineFitness: undefined }),
     /INVALID_BASELINE_FITNESS/,
   );
+});
+
+
+test("lineage verification rejects a hash-consistent entry with impossible verdict semantics", async () => {
+  const evidence = await adjudicateEpisode(base);
+  const genesis = new ImmuneLineage().report().headHash;
+  const forgedCore = {
+    index: 0,
+    scenarioId: evidence.scenarioId,
+    verdict: "PROMOTED" as const,
+    reason: "TRUST_ME",
+    episodeRoot: evidence.evidenceRoot,
+    previousEntryHash: genesis,
+  };
+  const forged = { ...forgedCore, entryHash: hash(forgedCore) };
+  assert.equal(verifyLineage([forged]), false);
 });
