@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CounterfactualImmuneForge,
+  MAX_CANDIDATES_PER_EPISODE,
   canonical,
   hash,
   merkleRoot,
@@ -291,4 +292,56 @@ test("canonical sealing rejects cyclic and non-JSON values instead of collapsing
   assert.throws(() => hash(cyclic), /CIF_CYCLIC_VALUE/);
   assert.throws(() => hash({ fn: () => 1 } as any), /CIF_UNSUPPORTED_VALUE/);
   assert.throws(() => hash(new Date(0) as any), /CIF_UNSUPPORTED_OBJECT/);
+});
+
+
+test("core replay receives the candidate so same-defense mutations cannot be conflated", async () => {
+  const a = adapters();
+  a.generateCandidates = async () => [
+    {
+      mutation: { id: "m1", description: "first", patch: { rule: "a" } },
+      defense: { id: "shared", version: "2" },
+    },
+    {
+      mutation: { id: "m2", description: "second", patch: { rule: "b" } },
+      defense: { id: "shared", version: "2" },
+    },
+  ];
+  a.replay = async (_s, d, candidate) => {
+    if (d.id === "base") return { reproduced: true, attackSucceeded: true, securityScore: 0.2 };
+    if (candidate?.mutation.id === "m1") return { reproduced: true, attackSucceeded: true, securityScore: 0.1 };
+    return { reproduced: true, attackSucceeded: false, securityScore: 0.9 };
+  };
+  a.fitness = ({ replay }) => replay.securityScore;
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "PROMOTED");
+  assert.equal(r.winnerId, "m2");
+  assert.equal(r.candidates.find((c) => c.candidateId === "m1")?.rejectedReason, "ATTACK_NOT_NEUTRALIZED");
+});
+
+test("core library enforces the same candidate limit advertised by MCP", async () => {
+  const a = adapters();
+  a.generateCandidates = async () =>
+    Array.from({ length: MAX_CANDIDATES_PER_EPISODE + 1 }, (_, i) => ({
+      mutation: { id: `m-${i}`, description: "candidate", patch: { i } },
+      defense: { id: `d-${i}`, version: "1" },
+    }));
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /CANDIDATE_LIMIT_EXCEEDED/,
+  );
+});
+
+test("adapter-supplied replay scenario ids cannot contradict the sealed scenario", async () => {
+  const a = adapters();
+  a.replay = async (_s, d) => ({
+    scenarioId: "wrong-scenario",
+    reproduced: true,
+    attackSucceeded: d.id === "base",
+    securityScore: d.id === "base" ? 0.2 : 0.9,
+  });
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /REPLAY_SCENARIO_BINDING_MISMATCH/,
+  );
 });
