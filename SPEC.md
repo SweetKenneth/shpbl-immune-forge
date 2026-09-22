@@ -1,4 +1,4 @@
-# CIF/0.2 Behavioral Specification
+# CIF/0.3 Behavioral Specification
 
 ## Required promotion properties
 
