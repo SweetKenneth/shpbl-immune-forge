@@ -310,8 +310,9 @@ export const TOOLS = [
               },
               replay: {
                 type: "object",
-                required: ["reproduced", "attackSucceeded", "securityScore"],
+                required: ["scenarioId", "reproduced", "attackSucceeded", "securityScore"],
                 properties: {
+                  scenarioId: { type: "string" },
                   reproduced: { type: "boolean" },
                   attackSucceeded: { type: "boolean" },
                   securityScore: { type: "number" },
