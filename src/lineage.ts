@@ -90,15 +90,34 @@ export function summarizeLineage(entries: readonly LineageEntry[]): {
 
 export function verifyLineage(entries: readonly LineageEntry[], expectedHeadHash?: string): boolean {
   try {
+    const allowed = new Set([
+      "index",
+      "scenarioId",
+      "verdict",
+      "reason",
+      "winnerId",
+      "episodeRoot",
+      "previousEntryHash",
+      "entryHash",
+    ]);
+    const hex64 = (value: unknown): value is string =>
+      typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
     let previous = GENESIS;
     for (let i = 0; i < entries.length; i += 1) {
       const e = entries[i];
+      if (!e || typeof e !== "object" || Array.isArray(e)) return false;
+      if (Object.keys(e as unknown as Record<string, unknown>).some((key) => !allowed.has(key))) return false;
       if (!(e.verdict === "PROMOTED" || e.verdict === "REJECTED" || e.verdict === "INCONCLUSIVE")) return false;
-      if (e.index !== i || e.previousEntryHash !== previous) return false;
+      if (!Number.isInteger(e.index) || e.index !== i) return false;
+      if (!hex64(e.scenarioId) || !hex64(e.episodeRoot) || !hex64(e.previousEntryHash) || !hex64(e.entryHash)) return false;
+      if (typeof e.reason !== "string" || e.reason.length === 0) return false;
+      if (e.winnerId !== undefined && (typeof e.winnerId !== "string" || e.winnerId.length === 0)) return false;
+      if (e.previousEntryHash !== previous) return false;
       const { entryHash, ...core } = e;
       if (hash(core) !== entryHash) return false;
       previous = entryHash;
     }
+    if (expectedHeadHash !== undefined && !hex64(expectedHeadHash)) return false;
     return expectedHeadHash === undefined || previous === expectedHeadHash;
   } catch {
     return false;
