@@ -380,3 +380,17 @@ test("MCP policy refuses attempts to disable mandatory proof gates", async () =>
     assert.match(result.content[0].text, /not supported.*proof gates are mandatory/i);
   }
 });
+
+
+test("complete whitespace-padded frames cannot bypass the raw request byte limit", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  const tiny = JSON.stringify({ jsonrpc: "2.0", id: 77, method: "ping" });
+  const padding = " ".repeat(POLICY.maxRequestBytes + 1);
+  processor.push(padding + tiny + "\n");
+  await processor.drain();
+  assert.equal(written.length, 1);
+  const response = JSON.parse(written[0]);
+  assert.equal(response.error.code, -32600);
+  assert.equal(response.id, null);
+});
