@@ -33,6 +33,7 @@ function adapters(mode: "good" | "regress" | "same" | "screen" | "noreplay" = "g
     ],
     screen: async () => (mode === "screen" ? { safe: false, reasons: ["blast radius"] } : { safe: true, reasons: [], riskScore: 0.1 }),
     regress: async () => ({ passed: mode !== "regress", failures: mode === "regress" ? ["legitimate flow broken"] : [] }),
+    baselineFitness: (replay) => replay.securityScore,
     fitness: () => (mode === "same" ? 0.2 : 0.9),
     dream: async (e) => [{ title: "Neighbor hypothesis", hypothesis: "Test adjacent boundary", evidenceRefs: [e.evidenceRoot] }],
   };
@@ -459,5 +460,29 @@ test("unknown direct-library policy keys are rejected instead of silently ignore
   assert.throws(
     () => new CounterfactualImmuneForge(adapters(), { requiredFitnessMargins: 0.5 } as any),
     /CIF_INVALID_POLICY/,
+  );
+});
+
+
+test("baseline and candidate fitness use the same adapter-defined scale", async () => {
+  const a = adapters();
+  a.replay = async (_s, d) =>
+    d.id === "base"
+      ? { reproduced: true, attackSucceeded: true, securityScore: 0.99 }
+      : { reproduced: true, attackSucceeded: false, securityScore: 0.1 };
+  a.baselineFitness = () => 10;
+  a.fitness = () => 9;
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.baselineFitness, 10);
+  assert.equal(r.verdict, "REJECTED");
+  assert.equal(r.candidates[0].rejectedReason, "NO_PROVEN_IMPROVEMENT");
+});
+
+test("non-finite baseline fitness is refused before candidate evaluation", async () => {
+  const a = adapters();
+  a.baselineFitness = () => Number.NaN;
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /INVALID_BASELINE_FITNESS/,
   );
 });
