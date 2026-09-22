@@ -34,6 +34,8 @@ export interface EpisodeInput {
   scenario: Scenario;
   baseline: Defense;
   baselineReplay: ReplayResult;
+  /** Baseline score produced by the same fitness policy/scale used for candidate fitnessScore. */
+  baselineFitness: number;
   diagnosis?: Json;
   candidates: CandidateObservation[];
   policy?: ForgePolicy;
@@ -109,12 +111,13 @@ export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvi
       },
     regress: async (candidate) =>
       observations.get(candidateKey(candidate))?.regression ?? MISSING_REGRESSION,
+    baselineFitness: () => sealedInput.baselineFitness,
     // An unsupplied or non-finite score falls back to the baseline and therefore cannot clear the delta gate.
     fitness: ({ candidate }, context) => {
       const score = observations.get(candidateKey(candidate))?.fitnessScore;
       return typeof score === "number" && Number.isFinite(score)
         ? score
-        : context.baselineReplay.securityScore;
+        : context.baselineFitness;
     },
   };
 
