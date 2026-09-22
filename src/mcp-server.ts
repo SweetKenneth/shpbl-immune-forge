@@ -485,8 +485,16 @@ export async function handleRpc(
     return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } };
   }
   const rpc = request as RpcRequest;
-  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
-    const invalidId = typeof rpc.id === "string" || typeof rpc.id === "number" || rpc.id === null ? rpc.id : null;
+  const idIsValid =
+    rpc.id === undefined ||
+    rpc.id === null ||
+    typeof rpc.id === "string" ||
+    (typeof rpc.id === "number" && Number.isFinite(rpc.id));
+  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string" || !idIsValid) {
+    const invalidId =
+      typeof rpc.id === "string" || (typeof rpc.id === "number" && Number.isFinite(rpc.id)) || rpc.id === null
+        ? rpc.id
+        : null;
     return { jsonrpc: "2.0", id: invalidId, error: { code: -32600, message: "invalid request" } };
   }
   const { id, method, params } = rpc;
