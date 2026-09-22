@@ -63,7 +63,7 @@ test("per-candidate fitness is not cross-contaminated", async () => {
 });
 
 test("an unreproduced baseline is inconclusive even with perfect candidates", async () => {
-  const r = await adjudicateEpisode({ ...base, baselineReplay: { reproduced: false, attackSucceeded: false, securityScore: 0.2 } });
+  const r = await adjudicateEpisode({ ...base, baselineReplay: { scenarioId: sealedScenarioId, reproduced: false, attackSucceeded: false, securityScore: 0.2 } });
   assert.equal(r.verdict, "INCONCLUSIVE");
 });
 
@@ -116,7 +116,7 @@ test("duplicate observations of one mutation/defense pair are refused", async ()
 test("a baseline that reproduced but was not defeated is inconclusive", async () => {
   const r = await adjudicateEpisode({
     ...base,
-    baselineReplay: { reproduced: true, attackSucceeded: false, securityScore: 0.2 },
+    baselineReplay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.2 },
   });
   assert.equal(r.verdict, "INCONCLUSIVE");
   assert.equal(r.reason, "BASELINE_ATTACK_NOT_SUCCESSFUL");
@@ -148,5 +148,16 @@ test("negative required fitness margins are refused", async () => {
   await assert.rejects(
     () => adjudicateEpisode({ ...base, policy: { requiredFitnessMargin: -0.1 } }),
     /CIF_INVALID_POLICY/,
+  );
+});
+
+
+test("baseline replay must claim the sealed scenario id", async () => {
+  await assert.rejects(
+    () => adjudicateEpisode({
+      ...base,
+      baselineReplay: { ...base.baselineReplay, scenarioId: "wrong-scenario" },
+    }),
+    /BASELINE_SCENARIO_BINDING_MISMATCH/,
   );
 });
