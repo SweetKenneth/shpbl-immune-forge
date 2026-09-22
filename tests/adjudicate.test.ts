@@ -181,3 +181,24 @@ test("returned lineage entries cannot be mutated to corrupt internal state", asy
   assert.equal(report.intact, true);
   assert.equal(report.entries[0].verdict, "PROMOTED");
 });
+
+
+test("library caller mutations after adjudication starts cannot change the sealed decision", async () => {
+  const mutable: EpisodeInput = JSON.parse(JSON.stringify(base));
+  const pending = adjudicateEpisode(mutable);
+
+  mutable.baselineReplay.attackSucceeded = false;
+  mutable.baselineReplay.securityScore = 0.99;
+  mutable.candidates[0].replay!.attackSucceeded = true;
+  mutable.candidates[0].fitnessScore = 0;
+  mutable.candidates[0].regression!.passed = false;
+  mutable.candidates[0].regression!.failures.push("late mutation");
+
+  const r = await pending;
+  assert.equal(r.verdict, "PROMOTED");
+  assert.equal(r.winnerId, "cand-a");
+  assert.equal(r.baselineReplay.attackSucceeded, true);
+  assert.equal(r.candidates[0].replay?.attackSucceeded, false);
+  assert.equal(r.candidates[0].regression?.passed, true);
+  assert.equal(verifyEvidenceRoot(r), true);
+});
