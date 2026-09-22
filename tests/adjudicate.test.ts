@@ -161,3 +161,23 @@ test("baseline replay must claim the sealed scenario id", async () => {
     /BASELINE_SCENARIO_BINDING_MISMATCH/,
   );
 });
+
+
+test("lineage rejects tampered evidence instead of blessing it with a new chain entry", async () => {
+  const lineage = new ImmuneLineage();
+  const evidence = await adjudicateEpisode(base);
+  const tampered = { ...evidence, reason: "edited after sealing" };
+  assert.throws(() => lineage.append(tampered), /INVALID_EPISODE_EVIDENCE/);
+  assert.equal(lineage.report().entries.length, 0);
+});
+
+test("returned lineage entries cannot be mutated to corrupt internal state", async () => {
+  const lineage = new ImmuneLineage();
+  const evidence = await adjudicateEpisode(base);
+  const entry = lineage.append(evidence);
+  assert.equal(Object.isFrozen(entry), true);
+  assert.throws(() => ((entry as any).verdict = "REJECTED"), TypeError);
+  const report = lineage.report();
+  assert.equal(report.intact, true);
+  assert.equal(report.entries[0].verdict, "PROMOTED");
+});
