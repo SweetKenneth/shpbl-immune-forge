@@ -593,8 +593,14 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
     typeof value === "string" && value.length > 0;
   const finite = (value: unknown): value is number =>
     typeof value === "number" && Number.isFinite(value);
+  const onlyKeys = (value: Record<string, unknown>, allowed: readonly string[]): boolean => {
+    const set = new Set(allowed);
+    return Object.keys(value).every((key) => set.has(key));
+  };
   const replayValid = (value: unknown): value is ReplayResult => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const raw = value as Record<string, unknown>;
+    if (!onlyKeys(raw, ["scenarioId", "reproduced", "attackSucceeded", "securityScore", "state", "trace"])) return false;
     const r = value as ReplayResult;
     return (
       r.scenarioId === e.scenarioId &&
@@ -605,6 +611,8 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
   };
   const impactValid = (value: unknown): value is ImpactResult => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const raw = value as Record<string, unknown>;
+    if (!onlyKeys(raw, ["safe", "reasons", "riskScore"])) return false;
     const impact = value as ImpactResult;
     return (
       typeof impact.safe === "boolean" &&
@@ -615,6 +623,8 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
   };
   const regressionValid = (value: unknown): value is RegressionResult => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const raw = value as Record<string, unknown>;
+    if (!onlyKeys(raw, ["passed", "failures", "score"])) return false;
     const regression = value as RegressionResult;
     return (
       typeof regression.passed === "boolean" &&
@@ -649,6 +659,16 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
   for (let index = 0; index < e.candidates.length; index += 1) {
     const candidate = e.candidates[index];
     if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return false;
+    if (!onlyKeys(candidate as unknown as Record<string, unknown>, [
+      "candidateId",
+      "mutationHash",
+      "defenseHash",
+      "impact",
+      "replay",
+      "regression",
+      "fitness",
+      "rejectedReason",
+    ])) return false;
     if (!nonEmpty(candidate.candidateId) || candidateIds.has(candidate.candidateId)) return false;
     candidateIds.add(candidate.candidateId);
     if (!hex64(candidate.mutationHash) || !hex64(candidate.defenseHash)) return false;
