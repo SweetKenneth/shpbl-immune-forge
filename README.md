@@ -10,8 +10,9 @@ regression gate, requires a positive, policy-defined reported improvement,
 and then seals the whole decision — including every rejected candidate and the reason it was rejected — as a
 SHA-256 Merkle evidence root that anyone can recompute later.
 
-It is a decision authority, not an actuator. It promotes nothing by itself, executes nothing, and touches no
-files, sockets, processes, or environment variables.
+It is a decision authority, not an actuator. It promotes nothing by itself, executes no candidate, reads no
+files, opens no network sockets, spawns no subprocesses, and reads no environment variables. Its stdio transport
+necessarily uses the host process's stdin/stdout.
 
 ## Why a practitioner would install this
 
@@ -71,7 +72,7 @@ git clone https://github.com/SweetKenneth/shpbl-immune-forge.git
 cd shpbl-immune-forge
 npm install      # devDependencies only: typescript, @types/node
 npm run build    # compiles to dist/
-   npm test         # conformance, tamper, adversarial, and boundary tests
+npm test         # conformance, tamper, adversarial, and boundary tests
 npm start        # starts the MCP server on stdio
 ```
 
@@ -153,8 +154,9 @@ verifyEvidenceRoot(evidence);  // true
   what a promotion was based on.
 - **Does not protect against** an operator who ignores the verdict, or a harness that reports observations
   dishonestly. Garbage in is sealed as garbage — verifiably, and attributable to the reporter.
-- **Refuses** filesystem, network, process, and environment access entirely, so it cannot be repurposed as an
-  offensive or surveillance tool. It never generates exploits and never applies changes to a live system.
+- **Refuses** application-level filesystem reads/writes, network sockets, subprocess spawning, and environment-variable
+  reads, so it cannot be repurposed as an offensive or surveillance tool. The stdio transport uses only stdin/stdout.
+  It never generates exploits and never applies changes to a live system.
 - **Input limits** are published by `describe_policy`: 256 candidates per episode, 10,000 lineage entries per
   verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
   unknown-verdict values. Duplicate observations of one mutation/defense pair and duplicate explicit mutation IDs are refused rather than
