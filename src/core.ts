@@ -289,11 +289,60 @@ function validateRegressionResult(regression: RegressionResult): Readonly<Regres
   return snapshot;
 }
 
+function validateDefense(defense: Defense, field: string): Readonly<Defense> {
+  const snapshot = immutableSnapshot(defense as unknown) as unknown;
+  if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) {
+    throw new Error(`INVALID_DEFENSE: ${field} must be an object`);
+  }
+  const d = snapshot as Record<string, unknown>;
+  if (typeof d.id !== "string" || d.id.length === 0 || typeof d.version !== "string" || d.version.length === 0) {
+    throw new Error(`INVALID_DEFENSE: ${field}.id and ${field}.version must be non-empty strings`);
+  }
+  return snapshot as Readonly<Defense>;
+}
+
+function validateCandidate(candidate: Candidate, index: number): Readonly<Candidate> {
+  const snapshot = immutableSnapshot(candidate as unknown) as unknown;
+  if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) {
+    throw new Error(`INVALID_CANDIDATE: candidate[${index}] must be an object`);
+  }
+  const c = snapshot as Record<string, unknown>;
+  if (typeof c.mutation !== "object" || c.mutation === null || Array.isArray(c.mutation)) {
+    throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation must be an object`);
+  }
+  const mutation = c.mutation as Record<string, unknown>;
+  if (typeof mutation.description !== "string" || mutation.description.length === 0) {
+    throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation.description must be a non-empty string`);
+  }
+  if (mutation.id !== undefined && (typeof mutation.id !== "string" || mutation.id.length === 0)) {
+    throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation.id must be a non-empty string when supplied`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(mutation, "patch")) {
+    throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation.patch is required`);
+  }
+  validateDefense(c.defense as Defense, `candidate[${index}].defense`);
+  return snapshot as Readonly<Candidate>;
+}
+
 export function sealScenario(s: Scenario): Readonly<Scenario> {
+  const source = immutableSnapshot(s as unknown) as unknown;
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    throw new Error("INVALID_SCENARIO: scenario must be an object");
+  }
+  const raw = source as Record<string, unknown>;
+  if (typeof raw.kind !== "string" || raw.kind.length === 0) {
+    throw new Error("INVALID_SCENARIO: scenario.kind must be a non-empty string");
+  }
+  if (typeof raw.expectedSecurityProperty !== "string" || raw.expectedSecurityProperty.length === 0) {
+    throw new Error("INVALID_SCENARIO: scenario.expectedSecurityProperty must be a non-empty string");
+  }
+  if (!Object.prototype.hasOwnProperty.call(raw, "payload")) {
+    throw new Error("INVALID_SCENARIO: scenario.payload is required");
+  }
   const snapshot = immutableSnapshot({
-    kind: s.kind,
-    payload: s.payload,
-    expectedSecurityProperty: s.expectedSecurityProperty,
+    kind: raw.kind,
+    payload: raw.payload as Json,
+    expectedSecurityProperty: raw.expectedSecurityProperty,
   });
   return immutableSnapshot({
     ...snapshot,
@@ -349,7 +398,7 @@ export class CounterfactualImmuneForge {
   async run(input: { scenario: Scenario; baseline: Defense }): Promise<EpisodeEvidence> {
     const policy = this.effective;
     const scenario = sealScenario(input.scenario);
-    const baseline = immutableSnapshot(input.baseline);
+    const baseline = validateDefense(input.baseline, "baseline");
     const baselineHash = hash(baseline);
     const baselineReplay = validateReplayResult(await this.adapters.replay(scenario, baseline), scenario.id!);
     if (!baselineReplay.reproduced) {
@@ -396,7 +445,7 @@ export class CounterfactualImmuneForge {
         `CANDIDATE_LIMIT_EXCEEDED: at most ${MAX_CANDIDATES_PER_EPISODE} candidates may be evaluated per episode`,
       );
     }
-    const candidates = generatedCandidates.map((candidate) => immutableSnapshot(candidate));
+    const candidates = generatedCandidates.map((candidate, index) => validateCandidate(candidate, index));
     const candidateIds = candidates.map(
       (c) => c.mutation.id ?? hash({ parent: baselineHash, mutation: c.mutation, defense: c.defense }),
     );
