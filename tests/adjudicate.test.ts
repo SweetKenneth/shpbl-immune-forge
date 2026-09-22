@@ -10,7 +10,7 @@ const sealedScenarioId = sealScenario(episodeScenario).id!;
 const base: EpisodeInput = {
   scenario: episodeScenario,
   baseline: { id: "guard", version: "1.0.0" },
-  baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineReplay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
   candidates: [
     {
       mutation: { id: "cand-a", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
