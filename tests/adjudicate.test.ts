@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { adjudicateEpisode, type EpisodeInput } from "../src/adjudicate.js";
-import { verifyEvidenceRoot } from "../src/core.js";
+import { sealScenario, verifyEvidenceRoot } from "../src/core.js";
 import { ImmuneLineage, verifyLineage } from "../src/lineage.js";
 
+const episodeScenario = { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" };
+const sealedScenarioId = sealScenario(episodeScenario).id!;
+
 const base: EpisodeInput = {
-  scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
+  scenario: episodeScenario,
   baseline: { id: "guard", version: "1.0.0" },
   baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
   candidates: [
@@ -13,7 +16,7 @@ const base: EpisodeInput = {
       mutation: { id: "cand-a", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
       defense: { id: "guard", version: "1.1.0" },
       impact: { safe: true, reasons: [] },
-      replay: { reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+      replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
       regression: { passed: true, failures: [] },
       fitnessScore: 0.95,
     },
@@ -89,7 +92,7 @@ test("a candidate that still loses to the attack is rejected before the regressi
     candidates: [
       {
         ...base.candidates[0],
-        replay: { reproduced: true, attackSucceeded: true, securityScore: 0.99 },
+        replay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.99 },
         fitnessScore: 0.99,
       },
     ],
@@ -102,5 +105,44 @@ test("duplicate observations of one mutation/defense pair are refused", async ()
   await assert.rejects(
     () => adjudicateEpisode({ ...base, candidates: [base.candidates[0], base.candidates[0]] }),
     /DUPLICATE_CANDIDATE_OBSERVATION/,
+  );
+});
+
+
+test("a baseline that reproduced but was not defeated is inconclusive", async () => {
+  const r = await adjudicateEpisode({
+    ...base,
+    baselineReplay: { reproduced: true, attackSucceeded: false, securityScore: 0.2 },
+  });
+  assert.equal(r.verdict, "INCONCLUSIVE");
+  assert.equal(r.reason, "BASELINE_ATTACK_NOT_SUCCESSFUL");
+  assert.equal(r.candidates.length, 0);
+});
+
+test("candidate replay must claim the sealed scenario id", async () => {
+  const r = await adjudicateEpisode({
+    ...base,
+    candidates: [{ ...base.candidates[0], replay: { ...base.candidates[0].replay!, scenarioId: "wrong-scenario" } }],
+  });
+  assert.equal(r.verdict, "REJECTED");
+  assert.equal(r.candidates[0].rejectedReason, "SCENARIO_REPLAY_FAILED");
+});
+
+test("duplicate explicit mutation ids are refused by the library API", async () => {
+  const second = {
+    ...base.candidates[0],
+    mutation: { id: "cand-a", description: "different mutation", patch: { rule: "different" } },
+    defense: { id: "guard", version: "1.2.0" },
+  };
+  await assert.rejects(
+    () => adjudicateEpisode({ ...base, candidates: [base.candidates[0], second] }),
+    /DUPLICATE_MUTATION_ID/,
+  );
+});
+
+test("negative required fitness margins are refused", async () => {
+  await assert.rejects(
+    () => adjudicateEpisode({ ...base, policy: { requiredFitnessMargin: -0.1 } }),
+    /CIF_INVALID_POLICY/,
   );
 });
