@@ -19,6 +19,24 @@ const scenario: Scenario = {
 };
 const baseline = { id: "base", version: "1" };
 
+function recomputeEvidenceRoot(evidence: any): any {
+  const { evidenceRoot: _oldRoot, dreamInsights: _dream, ...core } = evidence;
+  const leaves = [
+    hash(core.protocol),
+    hash(core.scenarioId),
+    hash(core.baselineHash),
+    hash(core.baselineReplay),
+    hash(core.diagnosis ?? null),
+    ...core.candidates.map(hash),
+    hash(core.baselineFitness),
+    hash(core.winnerId ?? null),
+    hash(core.verdict),
+    hash(core.reason),
+    hash(core.policy),
+  ];
+  return { ...evidence, evidenceRoot: merkleRoot(leaves) };
+}
+
 function adapters(mode: "good" | "regress" | "same" | "screen" | "noreplay" = "good"): ForgeAdapters {
   return {
     replay: async (_s, d) =>
@@ -485,4 +503,57 @@ test("non-finite baseline fitness is refused before candidate evaluation", async
     () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
     /INVALID_BASELINE_FITNESS/,
   );
+});
+
+
+test("verification rejects a self-consistent CIF object with weakened mandatory policy", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const forged = recomputeEvidenceRoot({
+    ...r,
+    policy: { ...r.policy, requireAttackNeutralized: false },
+  });
+  assert.equal(forged.evidenceRoot === r.evidenceRoot, false);
+  assert.equal(verifyEvidenceRoot(forged), false);
+});
+
+test("verification rejects recomputed evidence whose verdict contradicts qualifying candidates", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const forged = recomputeEvidenceRoot({
+    ...r,
+    verdict: "REJECTED",
+    reason: "NO_CANDIDATE_CLEARED_PROOF_GATES",
+    winnerId: undefined,
+  });
+  assert.equal(verifyEvidenceRoot(forged), false);
+});
+
+test("verification rejects recomputed evidence that claims promotion while the attack still succeeds", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const forged = recomputeEvidenceRoot({
+    ...r,
+    candidates: [
+      {
+        ...r.candidates[0],
+        replay: { ...r.candidates[0].replay!, attackSucceeded: true },
+      },
+    ],
+  });
+  assert.equal(verifyEvidenceRoot(forged), false);
+});
+
+test("verification rejects a recomputed winner that is not the first highest-fitness qualifier", async () => {
+  const a = adapters();
+  a.generateCandidates = async () => [
+    { mutation: { id: "first", description: "first", patch: {} }, defense: { id: "c1", version: "2" } },
+    { mutation: { id: "second", description: "second", patch: {} }, defense: { id: "c2", version: "3" } },
+  ];
+  a.replay = async (_s, d) =>
+    d.id === "base"
+      ? { reproduced: true, attackSucceeded: true, securityScore: 0.2 }
+      : { reproduced: true, attackSucceeded: false, securityScore: 0.9 };
+  a.fitness = () => 0.9;
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.winnerId, "first");
+  const forged = recomputeEvidenceRoot({ ...r, winnerId: "second" });
+  assert.equal(verifyEvidenceRoot(forged), false);
 });
