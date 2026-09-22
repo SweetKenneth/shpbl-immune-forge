@@ -229,3 +229,27 @@ test("data-driven baseline fitness is independent of replay securityScore and co
   assert.equal(r.verdict, "REJECTED");
   assert.equal(r.candidates[0].rejectedReason, "NO_PROVEN_IMPROVEMENT");
 });
+
+
+test("data-driven inconclusive episodes do not require baselineFitness", async () => {
+  const r = await adjudicateEpisode({
+    ...base,
+    baselineFitness: undefined,
+    baselineReplay: {
+      scenarioId: sealedScenarioId,
+      reproduced: false,
+      attackSucceeded: false,
+      securityScore: 0.2,
+    },
+  });
+  assert.equal(r.verdict, "INCONCLUSIVE");
+  assert.equal(r.baselineFitness, undefined);
+  assert.equal(verifyEvidenceRoot(r), true);
+});
+
+test("data-driven qualifying baselines still require baselineFitness", async () => {
+  await assert.rejects(
+    () => adjudicateEpisode({ ...base, baselineFitness: undefined }),
+    /INVALID_BASELINE_FITNESS/,
+  );
+});
