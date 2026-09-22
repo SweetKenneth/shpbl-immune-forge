@@ -3,9 +3,10 @@
 **Proof-gated defense evolution for AI agents and security automation.**
 
 When an agent, guardrail, or detection rule is defeated, the tempting next step is to patch it and move on.
-The Counterfactual Immune Forge refuses to accept a patch on anyone's word. It seals the attack scenario,
-proves the current defense really fails it, adjudicates each proposed change against **that same sealed
-scenario**, forces every change through a regression gate, requires a positive, policy-defined improvement,
+The Counterfactual Immune Forge refuses to accept a patch from an incomplete observation record. It seals the
+supplied attack scenario, requires the reported baseline replay to show the current defense failing it,
+adjudicates each proposed change against **that same sealed scenario record**, forces every change through a
+regression gate, requires a positive, policy-defined reported improvement,
 and then seals the whole decision — including every rejected candidate and the reason it was rejected — as a
 SHA-256 Merkle evidence root that anyone can recompute later.
 
@@ -14,9 +15,9 @@ files, sockets, processes, or environment variables.
 
 ## Why a practitioner would install this
 
-- **Defense changes stop being trust-me changes.** Every promotion carries recomputable evidence that the
-  original attack was reproduced, that the fix defeated it, that protected behaviour still passed, and by how
-  much the score improved.
+- **Defense changes stop being undocumented trust-me changes.** Every `PROMOTED` verdict carries recomputable
+  evidence of what the caller reported: baseline reproduction, candidate neutralization, protected-behaviour
+  regression status, and score improvement.
 - **Rejections are preserved, not discarded.** The most useful review artifact is the list of fixes that
   looked good and failed a gate — including the "fixed the attack, broke legitimate traffic" case.
 - **Goalposts cannot move.** The scenario is canonicalized and hashed before any candidate is considered, and
@@ -34,13 +35,13 @@ files, sockets, processes, or environment variables.
 2. Reproduce the baseline against it. If it does not reproduce → `INCONCLUSIVE`; no candidate is evaluated.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
-5. Replay the surviving candidates against the *same sealed scenario*.
+5. Require each survivor's supplied replay observation to be bound to the *same sealed scenario*.
 6. Reject any candidate whose own replay still reports the attack succeeding (`requireAttackNeutralized`,
    on by default). A high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
 8. Require a finite fitness score strictly above the baseline plus the configured margin.
 9. Record every rejected candidate with a machine-readable reason.
-10. Promote at most the single highest-scoring candidate that cleared every gate.
+10. Return `PROMOTED` for at most the single highest-scoring candidate that cleared every gate.
 11. Seal the episode as a Merkle evidence root.
 12. Run optional DREAM exploration **after** sealing, on the sealed evidence only. It cannot change the
     verdict or the root.
@@ -67,7 +68,7 @@ git clone https://github.com/SweetKenneth/shpbl-immune-forge.git
 cd shpbl-immune-forge
 npm install      # devDependencies only: typescript, @types/node
 npm run build    # compiles to dist/
-npm test         # 44 conformance, tamper, and boundary tests
+   npm test         # 47 conformance, tamper, and boundary tests
 npm start        # starts the MCP server on stdio
 ```
 
@@ -170,10 +171,13 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 
 ## Tenable status
 
-Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and merged as
-[pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169).
-Acceptance of a community listing does not imply review, approval, certification, validation, or endorsement
-of this software by Tenable.
+Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and initially merged as
+[pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169). Tenable later removed the listing
+in [pull request #187](https://github.com/tenable/cyberagents-exchange/pull/187) during its post-merge review. The
+listing is not currently published by the Exchange. Version 0.2.0 closed the promotion-soundness defect found
+in the original release; version 0.2.1 adds transport and submission-structure hardening.
+Past or future listing status does not imply review, approval, certification, validation, or endorsement of
+this software by Tenable.
 
 ## License
 
