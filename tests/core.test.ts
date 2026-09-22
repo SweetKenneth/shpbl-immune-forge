@@ -388,3 +388,11 @@ test("malformed adapter outputs cannot clear proof gates through JavaScript trut
     /INVALID_CANDIDATE_SET/,
   );
 });
+
+
+test("sparse arrays cannot collapse to empty arrays in canonical hashing", () => {
+  const sparse = new Array(1);
+  assert.notEqual(hash(sparse), hash([]));
+  assert.equal(hash(sparse), hash([null]));
+  assert.equal(hash([undefined] as any), hash([null]));
+});
