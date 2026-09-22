@@ -48,7 +48,7 @@ export class ImmuneLineage {
       scenarioId: evidence.scenarioId,
       verdict: evidence.verdict,
       reason: evidence.reason,
-      winnerId: evidence.winnerId,
+      ...(evidence.winnerId === undefined ? {} : { winnerId: evidence.winnerId }),
       episodeRoot: evidence.evidenceRoot,
       previousEntryHash,
     };
