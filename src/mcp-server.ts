@@ -12,7 +12,7 @@ import {
   type RegressionResult,
   type ReplayResult,
 } from "./core.js";
-import { ImmuneLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
+import { ImmuneLineage, summarizeLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
 export const SERVER_VERSION = "0.2.2";
@@ -348,11 +348,14 @@ export const TOOLS = [
   {
     name: "verify_episode_evidence",
     description:
-      "Recompute the Merkle evidence root of a sealed episode and report whether the covered bytes are unmodified.",
+      "Recompute the Merkle evidence root of a sealed episode. Optionally compare it to an independently retained expected root; without one, verification proves internal consistency only.",
     inputSchema: {
       type: "object",
       required: ["evidence"],
-      properties: { evidence: { type: "object" } },
+      properties: {
+        evidence: { type: "object" },
+        expectedRoot: { type: "string" },
+      },
     },
   },
   {
@@ -363,11 +366,15 @@ export const TOOLS = [
   },
   {
     name: "verify_immune_lineage",
-    description: "Verify an exported lineage entry list link by link without trusting this session's state.",
+    description:
+      "Verify an exported lineage entry list link by link. Optionally compare the computed head to an independently retained expected head hash.",
     inputSchema: {
       type: "object",
       required: ["entries"],
-      properties: { entries: { type: "array", items: { type: "object" } } },
+      properties: {
+        entries: { type: "array", items: { type: "object" } },
+        expectedHeadHash: { type: "string" },
+      },
     },
   },
   {
@@ -402,7 +409,17 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
         }
         case "verify_episode_evidence": {
           const evidence = parseEvidence(args);
-          return ok({ evidenceRoot: evidence.evidenceRoot, intact: verifyEvidenceRoot(evidence) });
+          const raw = obj(args, "arguments");
+          const expectedRoot = raw.expectedRoot === undefined ? undefined : str(raw.expectedRoot, "expectedRoot");
+          const internallyConsistent = verifyEvidenceRoot(evidence);
+          const matchesExpectedRoot =
+            expectedRoot === undefined ? undefined : evidence.evidenceRoot === expectedRoot;
+          return ok({
+            evidenceRoot: evidence.evidenceRoot,
+            internallyConsistent,
+            ...(expectedRoot === undefined ? {} : { expectedRoot, matchesExpectedRoot }),
+            intact: verifyEvidenceRoot(evidence, expectedRoot),
+          });
         }
         case "export_immune_lineage_report": {
           const report: LineageReport = lineage.report();
@@ -410,7 +427,21 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
         }
         case "verify_immune_lineage": {
           const entries = parseLineageEntries(args);
-          return ok({ entryCount: entries.length, intact: verifyLineage(entries) });
+          const raw = obj(args, "arguments");
+          const expectedHeadHash =
+            raw.expectedHeadHash === undefined ? undefined : str(raw.expectedHeadHash, "expectedHeadHash");
+          const summary = summarizeLineage(entries);
+          const internallyConsistent = verifyLineage(entries);
+          const matchesExpectedHeadHash =
+            expectedHeadHash === undefined ? undefined : summary.headHash === expectedHeadHash;
+          return ok({
+            entryCount: entries.length,
+            headHash: summary.headHash,
+            counts: summary.counts,
+            internallyConsistent,
+            ...(expectedHeadHash === undefined ? {} : { expectedHeadHash, matchesExpectedHeadHash }),
+            intact: verifyLineage(entries, expectedHeadHash),
+          });
         }
         case "describe_policy":
           return ok({ server: SERVER_NAME, version: SERVER_VERSION, ...POLICY, tools: TOOLS.map((t) => t.name) });
