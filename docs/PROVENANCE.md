@@ -23,7 +23,7 @@ Zero runtime dependencies. Platform imports limited to `node:crypto`. No filesys
 environment access anywhere in `src/` — asserted by `tests/disclosure.test.ts`.
 
 ## Verification
-- `npm test` — build plus 47 conformance, adversarial, boundary and MCP handshake tests.
+- `npm test` — build plus conformance, adversarial, boundary and MCP handshake tests.
 - `npm run typecheck` — strict TypeScript, no emit.
 - `docs/RELEASE-MANIFEST.md` — SHA-256 of every released file.
 
@@ -32,6 +32,6 @@ Submitted to the Tenable CyberAgents Exchange on 2026-09-12 and initially merged
 (<https://github.com/tenable/cyberagents-exchange/pull/169>). Tenable later removed the listing in pull request
 #187 (<https://github.com/tenable/cyberagents-exchange/pull/187>) during its post-merge review. Version 0.2.0
 closed the original candidate-neutralization gap; version 0.2.1 hardened transport and submission structure;
-version 0.2.2 closes additional baseline-qualification, scenario-binding, policy-margin, and library-ID ambiguity
-paths found during adversarial review. The listing is not currently published by the Exchange. The public repository is
+version 0.2.2 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
+deep-immutability, lineage-state, and verification-anchor gaps found during adversarial review. The listing is not currently published by the Exchange. The public repository is
 <https://github.com/SweetKenneth/shpbl-immune-forge>.
