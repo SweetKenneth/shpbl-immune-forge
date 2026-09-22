@@ -202,3 +202,16 @@ test("library caller mutations after adjudication starts cannot change the seale
   assert.equal(r.candidates[0].regression?.passed, true);
   assert.equal(verifyEvidenceRoot(r), true);
 });
+
+
+test("lineage cap prevents exporting more entries than the verifier accepts", async () => {
+  const lineage = new ImmuneLineage(2);
+  const evidence = await adjudicateEpisode(base);
+  lineage.append(evidence);
+  lineage.append(evidence);
+  assert.throws(() => lineage.append(evidence), /LINEAGE_LIMIT_EXCEEDED/);
+  const report = lineage.report();
+  assert.equal(report.entries.length, 2);
+  assert.equal(report.intact, true);
+  assert.equal(verifyLineage(report.entries, report.headHash), true);
+});
