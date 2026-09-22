@@ -149,6 +149,7 @@ export function verifyLineage(entries: readonly LineageEntry[], expectedHeadHash
       if (!e || typeof e !== "object" || Array.isArray(e)) return false;
       if (Object.keys(e as unknown as Record<string, unknown>).some((key) => !allowed.has(key))) return false;
       if (!(e.verdict === "PROMOTED" || e.verdict === "REJECTED" || e.verdict === "INCONCLUSIVE")) return false;
+      if (!lineageEntrySemanticsAreValid(e)) return false;
       if (!Number.isInteger(e.index) || e.index !== i) return false;
       if (!hex64(e.scenarioId) || !hex64(e.episodeRoot) || !hex64(e.previousEntryHash) || !hex64(e.entryHash)) return false;
       if (typeof e.reason !== "string" || e.reason.length === 0) return false;
