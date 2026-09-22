@@ -461,6 +461,27 @@ export class CounterfactualImmuneForge {
 }
 
 export function verifyEvidenceRoot(e: EpisodeEvidence, expectedRoot?: string): boolean {
+  if (!e || typeof e !== "object" || Array.isArray(e)) return false;
+  const allowedTopLevel = new Set([
+    "protocol",
+    "scenarioId",
+    "baselineHash",
+    "baselineReplay",
+    "diagnosis",
+    "candidates",
+    "baselineFitness",
+    "winnerId",
+    "verdict",
+    "reason",
+    "policy",
+    "dreamInsights",
+    "evidenceRoot",
+  ]);
+  if (Object.keys(e as unknown as Record<string, unknown>).some((key) => !allowedTopLevel.has(key))) {
+    return false;
+  }
+  if (e.protocol !== PROTOCOL) return false;
+  if (!(e.verdict === "PROMOTED" || e.verdict === "REJECTED" || e.verdict === "INCONCLUSIVE")) return false;
   const { evidenceRoot: root, dreamInsights: _ignored, ...core } = e;
   // A missing or malformed policy block is a failed verification, never a pass: the gates the
   // verdict was produced under are part of what the root covers.
