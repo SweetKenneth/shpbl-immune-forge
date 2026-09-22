@@ -33,6 +33,6 @@ Submitted to the Tenable CyberAgents Exchange on 2026-09-12 and initially merged
 (<https://github.com/tenable/cyberagents-exchange/pull/169>). Tenable later removed the listing in pull request
 #187 (<https://github.com/tenable/cyberagents-exchange/pull/187>) during its post-merge review. Version 0.2.0
 closed the original candidate-neutralization gap; version 0.2.1 hardened transport and submission structure;
-version 0.2.2 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
+version 0.3.0 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
 deep-immutability, lineage-state, and verification-anchor gaps found during adversarial review. The listing is not currently published by the Exchange. The public repository is
 <https://github.com/SweetKenneth/shpbl-immune-forge>.
