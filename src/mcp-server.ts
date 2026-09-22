@@ -23,7 +23,7 @@ import {
 } from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
-export const SERVER_VERSION = "0.2.2";
+export const SERVER_VERSION = "0.3.0";
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 
 export const POLICY = {
