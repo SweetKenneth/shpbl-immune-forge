@@ -269,3 +269,15 @@ test("lineage verification rejects a hash-consistent entry with impossible verdi
   const forged = { ...forgedCore, entryHash: hash(forgedCore) };
   assert.equal(verifyLineage([forged]), false);
 });
+
+
+test("lineage verification rejects explicit undefined winner fields on non-promoted entries", async () => {
+  const evidence = await adjudicateEpisode({ ...base, candidates: [] });
+  const lineage = new ImmuneLineage();
+  const entry = lineage.append(evidence);
+  const forgedCore: any = { ...entry };
+  delete forgedCore.entryHash;
+  forgedCore.winnerId = undefined;
+  const forged = { ...forgedCore, entryHash: hash(forgedCore) };
+  assert.equal(verifyLineage([forged]), false);
+});
