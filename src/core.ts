@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 
 export const PROTOCOL = "CIF/0.2" as const;
+export const MAX_CANDIDATES_PER_EPISODE = 256 as const;
 
 export type Verdict = "PROMOTED" | "REJECTED" | "INCONCLUSIVE";
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -54,7 +55,11 @@ export interface DreamInsight {
 
 export interface ForgeAdapters {
   /** DEFENSE #1 / ECHO: reproduce the observed security event against a defense. */
-  replay(scenario: Readonly<Scenario>, defense: Readonly<Defense>): Promise<ReplayResult>;
+  replay(
+    scenario: Readonly<Scenario>,
+    defense: Readonly<Defense>,
+    candidate?: Readonly<Candidate>,
+  ): Promise<ReplayResult>;
   /** DECODE: explain the observed failure. Evidence only; conveys no promotion authority. */
   diagnose?(scenario: Readonly<Scenario>, baseline: ReplayResult): Promise<Json>;
   /** ENGINEER/ENCODE/MEDIC/IMMUNE: candidate construction, freely replaceable. */
@@ -232,6 +237,13 @@ export function immutableSnapshot<T>(value: T): T {
   return walk(value) as T;
 }
 
+function bindReplayToScenario(replay: ReplayResult, scenarioId: string): Readonly<ReplayResult> {
+  if (replay.scenarioId !== undefined && replay.scenarioId !== scenarioId) {
+    throw new Error("REPLAY_SCENARIO_BINDING_MISMATCH: replay.scenarioId does not match the sealed scenario");
+  }
+  return immutableSnapshot({ ...replay, scenarioId });
+}
+
 export function sealScenario(s: Scenario): Readonly<Scenario> {
   const snapshot = immutableSnapshot({
     kind: s.kind,
@@ -294,7 +306,7 @@ export class CounterfactualImmuneForge {
     const scenario = sealScenario(input.scenario);
     const baseline = immutableSnapshot(input.baseline);
     const baselineHash = hash(baseline);
-    const baselineReplay = immutableSnapshot(await this.adapters.replay(scenario, baseline));
+    const baselineReplay = bindReplayToScenario(await this.adapters.replay(scenario, baseline), scenario.id!);
     if (policy.requireAttackReproduction && !baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
@@ -331,6 +343,11 @@ export class CounterfactualImmuneForge {
       baselineReplay,
       diagnosis,
     });
+    if (generatedCandidates.length > MAX_CANDIDATES_PER_EPISODE) {
+      throw new Error(
+        `CANDIDATE_LIMIT_EXCEEDED: at most ${MAX_CANDIDATES_PER_EPISODE} candidates may be evaluated per episode`,
+      );
+    }
     const candidates = generatedCandidates.map((candidate) => immutableSnapshot(candidate));
     const candidateIds = candidates.map(
       (c) => c.mutation.id ?? hash({ parent: baselineHash, mutation: c.mutation, defense: c.defense }),
@@ -359,7 +376,7 @@ export class CounterfactualImmuneForge {
       }
       // The same sealed scenario object is supplied for baseline and candidate replay:
       // callers cannot move the goalposts through the Forge.
-      ev.replay = immutableSnapshot(await this.adapters.replay(scenario, c.defense));
+      ev.replay = bindReplayToScenario(await this.adapters.replay(scenario, c.defense, c), scenario.id!);
       if (!ev.replay.reproduced) {
         ev.rejectedReason = "SCENARIO_REPLAY_FAILED";
         evidence.push(ev);
