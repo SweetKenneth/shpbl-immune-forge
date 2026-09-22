@@ -273,27 +273,31 @@ export const TOOLS = [
       "Adjudicate one defensive-mutation episode from recorded observations: impact screen, same-scenario replay, mandatory regression gates and positive fitness delta, then seal the decision as a Merkle evidence root. Executes nothing and promotes nothing on its own.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       required: ["scenario", "baseline", "baselineReplay"],
       properties: {
         scenario: {
           type: "object",
+          additionalProperties: false,
           required: ["kind", "expectedSecurityProperty"],
           properties: {
-            kind: { type: "string" },
+            kind: { type: "string", minLength: 1, maxLength: 4096 },
             payload: {},
-            expectedSecurityProperty: { type: "string" },
+            expectedSecurityProperty: { type: "string", minLength: 1, maxLength: 4096 },
           },
         },
         baseline: {
           type: "object",
+          additionalProperties: false,
           required: ["id", "version"],
-          properties: { id: { type: "string" }, version: { type: "string" }, state: {} },
+          properties: { id: { type: "string", minLength: 1, maxLength: 4096 }, version: { type: "string", minLength: 1, maxLength: 4096 }, state: {} },
         },
         baselineReplay: {
           type: "object",
+          additionalProperties: false,
           required: ["scenarioId", "reproduced", "attackSucceeded", "securityScore"],
           properties: {
-            scenarioId: { type: "string" },
+            scenarioId: { type: "string", minLength: 1, maxLength: 4096 },
             reproduced: { type: "boolean" },
             attackSucceeded: { type: "boolean" },
             securityScore: { type: "number" },
@@ -308,21 +312,33 @@ export const TOOLS = [
           maxItems: POLICY.maxCandidatesPerEpisode,
           items: {
             type: "object",
+            additionalProperties: false,
             required: ["mutation", "defense", "impact"],
             properties: {
               mutation: {
                 type: "object",
+                additionalProperties: false,
                 required: ["description"],
-                properties: { id: { type: "string" }, description: { type: "string" }, patch: {} },
+                properties: {
+                  id: { type: "string", minLength: 1, maxLength: 4096 },
+                  description: { type: "string", minLength: 1, maxLength: 4096 },
+                  patch: {},
+                },
               },
               defense: {
                 type: "object",
+                additionalProperties: false,
                 required: ["id", "version"],
-                properties: { id: { type: "string" }, version: { type: "string" }, state: {} },
+                properties: {
+                  id: { type: "string", minLength: 1, maxLength: 4096 },
+                  version: { type: "string", minLength: 1, maxLength: 4096 },
+                  state: {},
+                },
               },
               impact: {
                 type: "object",
-                required: ["safe"],
+                additionalProperties: false,
+                required: ["safe", "reasons"],
                 properties: {
                   safe: { type: "boolean" },
                   reasons: { type: "array", items: { type: "string" } },
@@ -331,9 +347,10 @@ export const TOOLS = [
               },
               replay: {
                 type: "object",
+                additionalProperties: false,
                 required: ["scenarioId", "reproduced", "attackSucceeded", "securityScore"],
                 properties: {
-                  scenarioId: { type: "string" },
+                  scenarioId: { type: "string", minLength: 1, maxLength: 4096 },
                   reproduced: { type: "boolean" },
                   attackSucceeded: { type: "boolean" },
                   securityScore: { type: "number" },
@@ -343,7 +360,8 @@ export const TOOLS = [
               },
               regression: {
                 type: "object",
-                required: ["passed"],
+                additionalProperties: false,
+                required: ["passed", "failures"],
                 properties: {
                   passed: { type: "boolean" },
                   failures: { type: "array", items: { type: "string" } },
