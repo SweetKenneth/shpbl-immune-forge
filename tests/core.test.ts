@@ -345,3 +345,15 @@ test("adapter-supplied replay scenario ids cannot contradict the sealed scenario
     /REPLAY_SCENARIO_BINDING_MISMATCH/,
   );
 });
+
+
+test("verification rejects unknown top-level claims even when the proof fields are untouched", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const embellished = { ...r, tenableApproved: true } as typeof r & { tenableApproved: boolean };
+  assert.equal(verifyEvidenceRoot(embellished), false);
+});
+
+test("verification rejects a wrong protocol even if a caller supplies a typed-looking object", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  assert.equal(verifyEvidenceRoot({ ...r, protocol: "CIF/999" } as any), false);
+});
