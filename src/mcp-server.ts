@@ -55,6 +55,13 @@ function obj(value: unknown, field: string): Record<string, unknown> {
   }
   return value as Record<string, unknown>;
 }
+function exactObj(value: unknown, field: string, allowed: readonly string[]): Record<string, unknown> {
+  const r = obj(value, field);
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(r).find((key) => !allowedSet.has(key));
+  if (unknown !== undefined) throw new InputError(`${field}.${unknown} is not supported`);
+  return r;
+}
 function str(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) throw new InputError(`${field} must be a non-empty string`);
   if (value.length > 4096) throw new InputError(`${field} exceeds 4096 characters`);
@@ -104,7 +111,7 @@ function json(value: unknown, field: string): Json {
 }
 
 function replay(value: unknown, field: string): ReplayResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["scenarioId", "reproduced", "attackSucceeded", "securityScore", "state", "trace"]);
   return {
     ...(r.scenarioId === undefined ? {} : { scenarioId: str(r.scenarioId, `${field}.scenarioId`) }),
     reproduced: bool(r.reproduced, `${field}.reproduced`),
@@ -115,40 +122,43 @@ function replay(value: unknown, field: string): ReplayResult {
   };
 }
 function impact(value: unknown, field: string): ImpactResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["safe", "reasons", "riskScore"]);
   return {
     safe: bool(r.safe, `${field}.safe`),
-    reasons: strArray(r.reasons ?? [], `${field}.reasons`),
+    reasons: strArray(r.reasons, `${field}.reasons`),
     ...(r.riskScore === undefined ? {} : { riskScore: num(r.riskScore, `${field}.riskScore`) }),
   };
 }
 function regression(value: unknown, field: string): RegressionResult {
-  const r = obj(value, field);
+  const r = exactObj(value, field, ["passed", "failures", "score"]);
   return {
     passed: bool(r.passed, `${field}.passed`),
-    failures: strArray(r.failures ?? [], `${field}.failures`),
+    failures: strArray(r.failures, `${field}.failures`),
     ...(r.score === undefined ? {} : { score: num(r.score, `${field}.score`) }),
   };
 }
 
 export function parseEpisodeInput(raw: unknown): EpisodeInput {
-  const a = obj(raw, "arguments");
-  const scenarioRaw = obj(a.scenario, "scenario");
-  const baselineRaw = obj(a.baseline, "baseline");
+  const a = exactObj(raw, "arguments", ["scenario", "baseline", "baselineReplay", "baselineFitness", "diagnosis", "candidates", "policy"]);
+  const scenarioRaw = exactObj(a.scenario, "scenario", ["kind", "payload", "expectedSecurityProperty"]);
+  const baselineRaw = exactObj(a.baseline, "baseline", ["id", "version", "state"]);
   const candidatesRaw = a.candidates ?? [];
   if (!Array.isArray(candidatesRaw)) throw new InputError("candidates must be an array");
   if (candidatesRaw.length > POLICY.maxCandidatesPerEpisode) {
     throw new InputError(`candidates exceeds ${POLICY.maxCandidatesPerEpisode} entries`);
   }
   const candidates: CandidateObservation[] = candidatesRaw.map((c, i) => {
-    const cr = obj(c, `candidates[${i}]`);
-    const mr = obj(cr.mutation, `candidates[${i}].mutation`);
-    const dr = obj(cr.defense, `candidates[${i}].defense`);
+    const cr = exactObj(c, `candidates[${i}]`, ["mutation", "defense", "impact", "replay", "regression", "fitnessScore"]);
+    const mr = exactObj(cr.mutation, `candidates[${i}].mutation`, ["id", "description", "patch"]);
+    const dr = exactObj(cr.defense, `candidates[${i}].defense`, ["id", "version", "state"]);
+    if (!Object.prototype.hasOwnProperty.call(mr, "patch")) {
+      throw new InputError(`candidates[${i}].mutation.patch is required`);
+    }
     return {
       mutation: {
         ...(mr.id === undefined ? {} : { id: str(mr.id, `candidates[${i}].mutation.id`) }),
         description: str(mr.description, `candidates[${i}].mutation.description`),
-        patch: json(mr.patch ?? null, `candidates[${i}].mutation.patch`),
+        patch: json(mr.patch, `candidates[${i}].mutation.patch`),
       },
       defense: {
         id: str(dr.id, `candidates[${i}].defense.id`),
@@ -176,7 +186,7 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
       seenId.add(c.mutation.id);
     }
   });
-  const policyRaw = a.policy === undefined ? {} : obj(a.policy, "policy");
+  const policyRaw = a.policy === undefined ? {} : exactObj(a.policy, "policy", ["requiredFitnessMargin"]);
   for (const key of Object.keys(policyRaw)) {
     if (key !== "requiredFitnessMargin") {
       throw new InputError(`policy.${key} is not supported; CIF/0.3 proof gates are mandatory`);
@@ -185,7 +195,12 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
   return {
     scenario: {
       kind: str(scenarioRaw.kind, "scenario.kind"),
-      payload: json(scenarioRaw.payload ?? null, "scenario.payload"),
+      payload: (() => {
+        if (!Object.prototype.hasOwnProperty.call(scenarioRaw, "payload")) {
+          throw new InputError("scenario.payload is required");
+        }
+        return json(scenarioRaw.payload, "scenario.payload");
+      })(),
       expectedSecurityProperty: str(
         scenarioRaw.expectedSecurityProperty,
         "scenario.expectedSecurityProperty",
