@@ -32,7 +32,7 @@ resources_exposed: []
 prompts_exposed: []
 ---
 
-When a guardrail, agent policy or detection rule is defeated, the patch that follows is usually accepted on trust. This server refuses to accept it on trust. It seals the attack scenario first, then makes every proposed change earn promotion against that same sealed scenario — and preserves the ones that failed.
+When a guardrail, agent policy or detection rule is defeated, the patch that follows is usually accepted on trust. This server refuses to accept it on trust. It seals the attack scenario first, then makes every proposed change earn promotion against that same sealed scenario — and preserves cryptographic identity plus gate evidence for the ones that failed.
 
 ## What it does
 
