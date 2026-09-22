@@ -102,8 +102,12 @@ test("a candidate that still loses to the attack is rejected before the regressi
 });
 
 test("duplicate observations of one mutation/defense pair are refused", async () => {
+  const duplicateWithoutExplicitId = {
+    ...base.candidates[0],
+    mutation: { description: base.candidates[0].mutation.description, patch: base.candidates[0].mutation.patch },
+  };
   await assert.rejects(
-    () => adjudicateEpisode({ ...base, candidates: [base.candidates[0], base.candidates[0]] }),
+    () => adjudicateEpisode({ ...base, candidates: [duplicateWithoutExplicitId, duplicateWithoutExplicitId] }),
     /DUPLICATE_CANDIDATE_OBSERVATION/,
   );
 });
