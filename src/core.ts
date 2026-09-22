@@ -19,6 +19,8 @@ export interface Defense {
   state?: Json;
 }
 export interface ReplayResult {
+  /** Hash of the sealed scenario this observation claims to describe. Required for data-driven observations. */
+  scenarioId?: string;
   reproduced: boolean;
   attackSucceeded: boolean;
   securityScore: number;
@@ -138,8 +140,12 @@ export interface ForgePolicy {
 }
 
 export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
+  const requiredFitnessMargin = policy.requiredFitnessMargin ?? 0;
+  if (!Number.isFinite(requiredFitnessMargin) || requiredFitnessMargin < 0) {
+    throw new RangeError("CIF_INVALID_POLICY: requiredFitnessMargin must be a finite non-negative number");
+  }
   return {
-    requiredFitnessMargin: policy.requiredFitnessMargin ?? 0,
+    requiredFitnessMargin,
     requireAttackReproduction: policy.requireAttackReproduction ?? true,
     requireAttackNeutralized: policy.requireAttackNeutralized ?? true,
   };
@@ -237,6 +243,19 @@ export class CounterfactualImmuneForge {
         baselineFitness: baselineReplay.securityScore,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_DID_NOT_REPRODUCE",
+        policy,
+      });
+    }
+    if (policy.requireAttackReproduction && !baselineReplay.attackSucceeded) {
+      return this.finish({
+        protocol: PROTOCOL,
+        scenarioId: scenario.id!,
+        baselineHash,
+        baselineReplay,
+        candidates: [],
+        baselineFitness: baselineReplay.securityScore,
+        verdict: "INCONCLUSIVE",
+        reason: "BASELINE_ATTACK_NOT_SUCCESSFUL",
         policy,
       });
     }
