@@ -3,6 +3,7 @@
 import {
   CounterfactualImmuneForge,
   hash,
+  sealScenario,
   type Candidate,
   type Defense,
   type EpisodeEvidence,
@@ -56,6 +57,10 @@ const MISSING_REGRESSION: RegressionResult = {
  * no network, no filesystem: only gate enforcement and evidence sealing.
  */
 export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvidence> {
+  const expectedScenarioId = sealScenario(input.scenario).id!;
+  if (input.baselineReplay.scenarioId !== expectedScenarioId) {
+    throw new Error("BASELINE_SCENARIO_BINDING_MISMATCH: baselineReplay.scenarioId must equal the sealed scenario id");
+  }
   const observations = new Map<string, CandidateObservation>();
   const mutationIds = new Set<string>();
   for (const o of input.candidates) {
