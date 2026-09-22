@@ -128,7 +128,7 @@ export interface EpisodeEvidence {
   baselineReplay: ReplayResult;
   diagnosis?: Json;
   candidates: CandidateEvidence[];
-  baselineFitness: number;
+  baselineFitness?: number;
   winnerId?: string;
   verdict: Verdict;
   reason: string;
@@ -406,7 +406,7 @@ function episodeRoot(e: EpisodeCore): string {
     hash(e.baselineReplay),
     hash(e.diagnosis ?? null),
     ...e.candidates.map(hash),
-    hash(e.baselineFitness),
+    hash(e.baselineFitness ?? null),
     hash(e.winnerId ?? null),
     hash(e.verdict),
     hash(e.reason),
@@ -431,10 +431,6 @@ export class CounterfactualImmuneForge {
     const baseline = validateDefense(input.baseline, "baseline");
     const baselineHash = hash(baseline);
     const baselineReplay = validateReplayResult(await this.adapters.replay(scenario, baseline), scenario.id!);
-    const baselineFitness = this.adapters.baselineFitness(baselineReplay);
-    if (typeof baselineFitness !== "number" || !Number.isFinite(baselineFitness)) {
-      throw new Error("INVALID_BASELINE_FITNESS: baseline fitness must be a finite number");
-    }
     if (!baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
@@ -442,7 +438,6 @@ export class CounterfactualImmuneForge {
         baselineHash,
         baselineReplay,
         candidates: [],
-        baselineFitness,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_DID_NOT_REPRODUCE",
         policy,
@@ -455,11 +450,15 @@ export class CounterfactualImmuneForge {
         baselineHash,
         baselineReplay,
         candidates: [],
-        baselineFitness,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_ATTACK_NOT_SUCCESSFUL",
         policy,
       });
+    }
+
+    const baselineFitness = this.adapters.baselineFitness(baselineReplay);
+    if (typeof baselineFitness !== "number" || !Number.isFinite(baselineFitness)) {
+      throw new Error("INVALID_BASELINE_FITNESS: baseline fitness must be a finite number");
     }
 
     const diagnosis = this.adapters.diagnose
@@ -635,7 +634,13 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
   };
 
   if (!hex64(e.scenarioId) || !hex64(e.baselineHash) || !hex64(e.evidenceRoot)) return false;
-  if (!replayValid(e.baselineReplay) || !finite(e.baselineFitness)) return false;
+  if (!replayValid(e.baselineReplay)) return false;
+  const baselineQualified = e.baselineReplay.reproduced && e.baselineReplay.attackSucceeded;
+  if (baselineQualified) {
+    if (!finite(e.baselineFitness)) return false;
+  } else if (e.baselineFitness !== undefined) {
+    return false;
+  }
 
   if (typeof e.policy !== "object" || e.policy === null || Array.isArray(e.policy)) return false;
   const policyKeys = Object.keys(e.policy).sort();
@@ -718,7 +723,7 @@ function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
       continue;
     }
 
-    const threshold = e.baselineFitness + e.policy.requiredFitnessMargin;
+    const threshold = (e.baselineFitness as number) + e.policy.requiredFitnessMargin;
     if (candidate.fitness === undefined || !(candidate.fitness > threshold)) {
       if (candidate.rejectedReason !== "NO_PROVEN_IMPROVEMENT") return false;
       continue;
