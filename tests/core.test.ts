@@ -453,3 +453,11 @@ test("direct library rejects malformed scenario defense and candidate shapes", a
     /INVALID_CANDIDATE/,
   );
 });
+
+
+test("unknown direct-library policy keys are rejected instead of silently ignored", () => {
+  assert.throws(
+    () => new CounterfactualImmuneForge(adapters(), { requiredFitnessMargins: 0.5 } as any),
+    /CIF_INVALID_POLICY/,
+  );
+});
