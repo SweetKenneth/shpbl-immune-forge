@@ -31,6 +31,7 @@ test("initialize, ping and tools/list answer the MCP handshake", async () => {
   const call = createHandler();
   const init: any = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" }, call);
   assert.equal(init.result.serverInfo.name, "shpbl-counterfactual-immune-forge");
+  assert.equal(init.result.protocolVersion, "2025-11-25");
   assert.deepEqual(Object.keys(init.result.capabilities), ["tools"]);
   const ping: any = await handleRpc({ jsonrpc: "2.0", id: 2, method: "ping" }, call);
   assert.deepEqual(ping.result, {});
