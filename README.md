@@ -30,7 +30,7 @@ files, sockets, processes, or environment variables.
 
 ## Protocol
 
-`CIF/0.2`, in order:
+`CIF/0.3`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
 2. Reproduce the baseline against it. Data-driven baseline evidence must carry the sealed scenario hash. With
