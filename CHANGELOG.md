@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.2 — 2026-09-22
+
+Adversarial promotion-soundness hardening.
+
+### Fixed
+
+- **A reproduced baseline could enter mutation evaluation even when the attack had not succeeded.** With the default reproduction gate, the baseline must now both reproduce the event and report `attackSucceeded: true`; otherwise the episode is `INCONCLUSIVE` with `BASELINE_ATTACK_NOT_SUCCESSFUL`.
+- **Data-driven candidate replay observations were associated with an episode but not cryptographically bound to its sealed scenario.** Candidate replays must now carry the sealed `scenarioId`; missing or mismatched bindings fail the replay gate. This binds the reporter's claim to the episode without claiming to prove an external harness was truthful.
+- **Negative fitness margins could weaken the positive-improvement gate.** `requiredFitnessMargin` is now required to be finite and non-negative at both library and MCP boundaries.
+- **Duplicate explicit mutation IDs were only rejected by the MCP parser.** The library adjudication API now enforces the same uniqueness invariant, preventing ambiguous `winnerId` values.
+
+### Added
+
+- Adversarial regressions covering baseline-not-defeated episodes, wrong scenario bindings, duplicate library mutation IDs, and negative policy margins.
+
+
 ## 0.2.1 — 2026-09-22
 
 Submission-hardening release. Adjudication semantics and `CIF/0.2` evidence remain unchanged.
