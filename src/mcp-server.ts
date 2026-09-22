@@ -197,6 +197,7 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
       ...(baselineRaw.state === undefined ? {} : { state: json(baselineRaw.state, "baseline.state") }),
     },
     baselineReplay: replay(a.baselineReplay, "baselineReplay"),
+    baselineFitness: num(a.baselineFitness, "baselineFitness"),
     ...(a.diagnosis === undefined ? {} : { diagnosis: json(a.diagnosis, "diagnosis") }),
     candidates,
     policy: {
@@ -257,7 +258,7 @@ export const TOOLS = [
       "Adjudicate one defensive-mutation episode from recorded observations: impact screen, same-scenario replay, mandatory regression gates and positive fitness delta, then seal the decision as a Merkle evidence root. Executes nothing and promotes nothing on its own.",
     inputSchema: {
       type: "object",
-      required: ["scenario", "baseline", "baselineReplay"],
+      required: ["scenario", "baseline", "baselineReplay", "baselineFitness"],
       properties: {
         scenario: {
           type: "object",
@@ -285,6 +286,7 @@ export const TOOLS = [
             trace: {},
           },
         },
+        baselineFitness: { type: "number" },
         diagnosis: {},
         candidates: {
           type: "array",
