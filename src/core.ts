@@ -186,7 +186,7 @@ export function canonical(value: unknown): string {
     }
     ancestors.add(v);
     try {
-      if (Array.isArray(v)) return `[${v.map((item) => walk(item)).join(",")}]`;
+      if (Array.isArray(v)) return `[${Array.from({ length: v.length }, (_, i) => walk(v[i] === undefined ? null : v[i])).join(",")}]`;
       const prototype = Object.getPrototypeOf(v);
       if (prototype !== Object.prototype && prototype !== null) {
         throw new TypeError("CIF_UNSUPPORTED_OBJECT: only plain JSON objects can be sealed");
@@ -224,7 +224,7 @@ export function immutableSnapshot<T>(value: T): T {
     if (ancestors.has(v)) throw new TypeError("CIF_CYCLIC_VALUE: cyclic values cannot be snapshotted");
     ancestors.add(v);
     try {
-      if (Array.isArray(v)) return Object.freeze(v.map((item) => walk(item)));
+      if (Array.isArray(v)) return Object.freeze(Array.from({ length: v.length }, (_, i) => walk(v[i] === undefined ? null : v[i])));
       const prototype = Object.getPrototypeOf(v);
       if (prototype !== Object.prototype && prototype !== null) {
         throw new TypeError("CIF_UNSUPPORTED_OBJECT: only plain JSON objects can be snapshotted");
