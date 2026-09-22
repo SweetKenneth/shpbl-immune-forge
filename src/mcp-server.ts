@@ -17,7 +17,7 @@ import { ImmuneLineage, summarizeLineage, verifyLineage, type LineageEntry, type
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
 export const SERVER_VERSION = "0.2.2";
-const MCP_PROTOCOL_VERSION = "2024-11-05";
+const MCP_PROTOCOL_VERSION = "2025-11-25";
 
 export const POLICY = {
   protocol: PROTOCOL,
