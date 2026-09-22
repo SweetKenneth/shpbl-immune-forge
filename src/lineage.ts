@@ -114,16 +114,22 @@ function lineageEntrySemanticsAreValid(entry: LineageEntry): boolean {
   ) {
     return false;
   }
+  const hasWinnerId = Object.prototype.hasOwnProperty.call(entry, "winnerId");
   if (entry.verdict === "PROMOTED") {
-    return entry.reason === "PROOF_GATES_PASSED" && typeof entry.winnerId === "string" && entry.winnerId.length > 0;
+    return (
+      entry.reason === "PROOF_GATES_PASSED" &&
+      hasWinnerId &&
+      typeof entry.winnerId === "string" &&
+      entry.winnerId.length > 0
+    );
   }
   if (entry.verdict === "REJECTED") {
-    return entry.reason === "NO_CANDIDATE_CLEARED_PROOF_GATES" && entry.winnerId === undefined;
+    return entry.reason === "NO_CANDIDATE_CLEARED_PROOF_GATES" && !hasWinnerId;
   }
   if (entry.verdict === "INCONCLUSIVE") {
     return (
       (entry.reason === "BASELINE_DID_NOT_REPRODUCE" || entry.reason === "BASELINE_ATTACK_NOT_SUCCESSFUL") &&
-      entry.winnerId === undefined
+      !hasWinnerId
     );
   }
   return false;
