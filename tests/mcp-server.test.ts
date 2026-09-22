@@ -59,6 +59,9 @@ test("invalid JSON-RPC envelopes and unsupported batches fail explicitly", async
   const batch: any = await handleRpc([{ jsonrpc: "2.0", id: 6, method: "ping" }], call);
   assert.equal(batch.error.code, -32600);
   assert.equal(batch.id, null);
+  const badId: any = await handleRpc({ jsonrpc: "2.0", id: { nope: true }, method: "ping" }, call);
+  assert.equal(badId.error.code, -32600);
+  assert.equal(badId.id, null);
 });
 
 test("adjudication through the tool interface promotes, records lineage and verifies", async () => {
@@ -304,4 +307,39 @@ test("transport errors cannot leapfrog earlier queued requests", async () => {
   await processor.drain();
   assert.equal(JSON.parse(written[0]).id, 41);
   assert.equal(JSON.parse(written[1]).error.code, -32600);
+});
+
+
+test("transport errors cannot overtake an earlier slow response", async () => {
+  const baseCall = createHandler();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const delayedCall = async (name: string, args: unknown) => {
+    if (name === "describe_policy") await gate;
+    return baseCall(name, args);
+  };
+  const written: string[] = [];
+  const processor = createLineProcessor(delayedCall, (line) => written.push(line.trim()));
+
+  processor.push(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 41,
+    method: "tools/call",
+    params: { name: "describe_policy", arguments: {} },
+  }) + "\n");
+  processor.push("x".repeat(POLICY.maxRequestBytes + 1));
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 42, method: "ping" }) + "\n");
+
+  await Promise.resolve();
+  assert.equal(written.length, 0);
+
+  release();
+  await processor.drain();
+
+  const parsed = written.map((line) => JSON.parse(line));
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0].id, 41);
+  assert.equal(parsed[1].id, null);
+  assert.equal(parsed[1].error.code, -32600);
+  assert.equal(parsed[2].id, 42);
 });
