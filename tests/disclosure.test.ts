@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const srcDir = fileURLToPath(new URL("../../src/", import.meta.url));
 const sources = readdirSync(srcDir).filter((f) => f.endsWith(".ts"));
 
-test("the implementation performs no filesystem, network, process or environment access", () => {
+test("the implementation performs no filesystem/network access, process spawning, or environment reads", () => {
   const forbidden = [
     "node:fs", "node:net", "node:http", "node:https", "node:dns", "node:child_process", "node:os",
     "child_process", "process.env", "fetch(", "XMLHttpRequest", "WebSocket", "eval(", "new Function",
