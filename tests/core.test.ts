@@ -409,3 +409,47 @@ test("CIF/0.3 refuses attempts to disable mandatory attack proof gates", () => {
     /CIF_IMMUTABLE_PROOF_GATES/,
   );
 });
+
+
+test("direct library rejects malformed scenario defense and candidate shapes", async () => {
+  assert.throws(
+    () => sealScenario({ kind: "", payload: {}, expectedSecurityProperty: "x" } as any),
+    /INVALID_SCENARIO/,
+  );
+  assert.throws(
+    () => sealScenario({ kind: "x", expectedSecurityProperty: "x" } as any),
+    /INVALID_SCENARIO/,
+  );
+
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(adapters()).run({
+      scenario,
+      baseline: { id: "", version: "1" } as any,
+    }),
+    /INVALID_DEFENSE/,
+  );
+
+  const missingPatch = adapters();
+  missingPatch.generateCandidates = async () => [
+    {
+      mutation: { id: "bad", description: "missing patch" } as any,
+      defense: { id: "candidate", version: "2" },
+    },
+  ];
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(missingPatch).run({ scenario, baseline }),
+    /INVALID_CANDIDATE/,
+  );
+
+  const emptyMutationId = adapters();
+  emptyMutationId.generateCandidates = async () => [
+    {
+      mutation: { id: "", description: "bad id", patch: {} },
+      defense: { id: "candidate", version: "2" },
+    },
+  ];
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(emptyMutationId).run({ scenario, baseline }),
+    /INVALID_CANDIDATE/,
+  );
+});
