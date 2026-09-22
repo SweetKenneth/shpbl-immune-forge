@@ -242,11 +242,50 @@ export function immutableSnapshot<T>(value: T): T {
   return walk(value) as T;
 }
 
-function bindReplayToScenario(replay: ReplayResult, scenarioId: string): Readonly<ReplayResult> {
-  if (replay.scenarioId !== undefined && replay.scenarioId !== scenarioId) {
+function validateReplayResult(replay: ReplayResult, scenarioId: string): Readonly<ReplayResult> {
+  const snapshot = immutableSnapshot(replay);
+  if (
+    typeof snapshot.reproduced !== "boolean" ||
+    typeof snapshot.attackSucceeded !== "boolean" ||
+    typeof snapshot.securityScore !== "number" ||
+    !Number.isFinite(snapshot.securityScore)
+  ) {
+    throw new Error("INVALID_REPLAY_RESULT: reproduced and attackSucceeded must be booleans and securityScore finite");
+  }
+  if (snapshot.scenarioId !== undefined && (typeof snapshot.scenarioId !== "string" || snapshot.scenarioId.length === 0)) {
+    throw new Error("INVALID_REPLAY_RESULT: scenarioId must be a non-empty string when supplied");
+  }
+  if (snapshot.scenarioId !== undefined && snapshot.scenarioId !== scenarioId) {
     throw new Error("REPLAY_SCENARIO_BINDING_MISMATCH: replay.scenarioId does not match the sealed scenario");
   }
-  return immutableSnapshot({ ...replay, scenarioId });
+  return immutableSnapshot({ ...snapshot, scenarioId });
+}
+
+function validateImpactResult(impact: ImpactResult): Readonly<ImpactResult> {
+  const snapshot = immutableSnapshot(impact);
+  if (
+    typeof snapshot.safe !== "boolean" ||
+    !Array.isArray(snapshot.reasons) ||
+    !snapshot.reasons.every((reason) => typeof reason === "string") ||
+    (snapshot.riskScore !== undefined &&
+      (typeof snapshot.riskScore !== "number" || !Number.isFinite(snapshot.riskScore)))
+  ) {
+    throw new Error("INVALID_IMPACT_RESULT: safe must be boolean, reasons strings, and riskScore finite when supplied");
+  }
+  return snapshot;
+}
+
+function validateRegressionResult(regression: RegressionResult): Readonly<RegressionResult> {
+  const snapshot = immutableSnapshot(regression);
+  if (
+    typeof snapshot.passed !== "boolean" ||
+    !Array.isArray(snapshot.failures) ||
+    !snapshot.failures.every((failure) => typeof failure === "string") ||
+    (snapshot.score !== undefined && (typeof snapshot.score !== "number" || !Number.isFinite(snapshot.score)))
+  ) {
+    throw new Error("INVALID_REGRESSION_RESULT: passed must be boolean, failures strings, and score finite when supplied");
+  }
+  return snapshot;
 }
 
 export function sealScenario(s: Scenario): Readonly<Scenario> {
@@ -311,7 +350,7 @@ export class CounterfactualImmuneForge {
     const scenario = sealScenario(input.scenario);
     const baseline = immutableSnapshot(input.baseline);
     const baselineHash = hash(baseline);
-    const baselineReplay = bindReplayToScenario(await this.adapters.replay(scenario, baseline), scenario.id!);
+    const baselineReplay = validateReplayResult(await this.adapters.replay(scenario, baseline), scenario.id!);
     if (policy.requireAttackReproduction && !baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
@@ -348,6 +387,9 @@ export class CounterfactualImmuneForge {
       baselineReplay,
       diagnosis,
     });
+    if (!Array.isArray(generatedCandidates)) {
+      throw new Error("INVALID_CANDIDATE_SET: generateCandidates must return an array");
+    }
     if (generatedCandidates.length > MAX_CANDIDATES_PER_EPISODE) {
       throw new Error(
         `CANDIDATE_LIMIT_EXCEEDED: at most ${MAX_CANDIDATES_PER_EPISODE} candidates may be evaluated per episode`,
@@ -373,7 +415,7 @@ export class CounterfactualImmuneForge {
         defenseHash: hash(c.defense),
         impact: { safe: false, reasons: ["NOT_SCREENED"] },
       };
-      ev.impact = immutableSnapshot(await this.adapters.screen(c, { scenario, baseline }));
+      ev.impact = validateImpactResult(await this.adapters.screen(c, { scenario, baseline }));
       if (!ev.impact.safe) {
         ev.rejectedReason = "IMPACT_SCREEN_FAILED";
         evidence.push(ev);
@@ -381,7 +423,7 @@ export class CounterfactualImmuneForge {
       }
       // The same sealed scenario object is supplied for baseline and candidate replay:
       // callers cannot move the goalposts through the Forge.
-      ev.replay = bindReplayToScenario(await this.adapters.replay(scenario, c.defense, c), scenario.id!);
+      ev.replay = validateReplayResult(await this.adapters.replay(scenario, c.defense, c), scenario.id!);
       if (!ev.replay.reproduced) {
         ev.rejectedReason = "SCENARIO_REPLAY_FAILED";
         evidence.push(ev);
@@ -393,7 +435,7 @@ export class CounterfactualImmuneForge {
         evidence.push(ev);
         continue;
       }
-      ev.regression = immutableSnapshot(await this.adapters.regress(c, ev.replay, { scenario, baselineReplay }));
+      ev.regression = validateRegressionResult(await this.adapters.regress(c, ev.replay, { scenario, baselineReplay }));
       if (!ev.regression.passed || ev.regression.failures.length > 0) {
         ev.rejectedReason = "REGRESSION_GATE_FAILED";
         evidence.push(ev);
