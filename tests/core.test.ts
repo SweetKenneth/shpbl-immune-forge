@@ -634,12 +634,28 @@ test("a proven baseline still requires a finite fitness score", async () => {
 
 
 test("explicit undefined and sparse-array mutations cannot preserve evidence verification", async () => {
-  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const rejected = await new CounterfactualImmuneForge(adapters("same")).run({ scenario, baseline });
+  assert.equal(rejected.verdict, "REJECTED");
+  assert.equal(Object.prototype.hasOwnProperty.call(rejected, "winnerId"), false);
+  assert.equal(verifyEvidenceRoot(rejected), true);
 
-  const explicitUndefined = { ...r, winnerId: undefined } as any;
+  // Before strict representation validation, this own-property mutation canonicalized identically
+  // to omission and still satisfied the REJECTED winnerId===undefined semantic check.
+  const explicitUndefined = { ...rejected, winnerId: undefined } as any;
   assert.equal(verifyEvidenceRoot(explicitUndefined), false);
 
-  const sparseTrace = { ...r, baselineReplay: { ...r.baselineReplay, trace: [null] } } as any;
-  sparseTrace.baselineReplay.trace = new Array(1);
+  const withNullTraceAdapters = adapters("same");
+  withNullTraceAdapters.replay = async (_s, d) =>
+    d.id === "base"
+      ? { reproduced: true, attackSucceeded: true, securityScore: 0.2, trace: [null] }
+      : { reproduced: true, attackSucceeded: false, securityScore: 0.9 };
+  const withNullTrace = await new CounterfactualImmuneForge(withNullTraceAdapters).run({ scenario, baseline });
+  assert.equal(verifyEvidenceRoot(withNullTrace), true);
+
+  // A sparse one-slot array canonicalized to the same JSON array as [null].
+  const sparseTrace = {
+    ...withNullTrace,
+    baselineReplay: { ...withNullTrace.baselineReplay, trace: new Array(1) },
+  } as any;
   assert.equal(verifyEvidenceRoot(sparseTrace), false);
 });
