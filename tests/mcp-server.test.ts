@@ -420,3 +420,29 @@ test("MCP inconclusive episodes may omit baselineFitness but qualifying episodes
   const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
   assert.equal(tool.inputSchema.required.includes("baselineFitness"), false);
 });
+
+
+test("advertised adjudication schema matches the strict runtime parser", async () => {
+  const call = createHandler();
+  const list: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 91,
+    method: "tools/list",
+  }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  const schema = tool.inputSchema;
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.scenario.additionalProperties, false);
+  assert.equal(schema.properties.baseline.additionalProperties, false);
+  assert.equal(schema.properties.baselineReplay.additionalProperties, false);
+
+  const candidate = schema.properties.candidates.items;
+  assert.equal(candidate.additionalProperties, false);
+  assert.equal(candidate.properties.mutation.additionalProperties, false);
+  assert.equal(candidate.properties.defense.additionalProperties, false);
+  assert.equal(candidate.properties.impact.additionalProperties, false);
+  assert.ok(candidate.properties.impact.required.includes("reasons"));
+  assert.equal(candidate.properties.replay.additionalProperties, false);
+  assert.equal(candidate.properties.regression.additionalProperties, false);
+  assert.ok(candidate.properties.regression.required.includes("failures"));
+});
