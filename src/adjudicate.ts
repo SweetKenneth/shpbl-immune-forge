@@ -3,6 +3,7 @@
 import {
   CounterfactualImmuneForge,
   hash,
+  immutableSnapshot,
   sealScenario,
   type Candidate,
   type Defense,
@@ -57,13 +58,16 @@ const MISSING_REGRESSION: RegressionResult = {
  * no network, no filesystem: only gate enforcement and evidence sealing.
  */
 export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvidence> {
-  const expectedScenarioId = sealScenario(input.scenario).id!;
-  if (input.baselineReplay.scenarioId !== expectedScenarioId) {
+  // Snapshot the entire caller-owned record before the first async boundary. Without this,
+  // a library caller could mutate observations after validation but before an adapter reads them.
+  const sealedInput = immutableSnapshot(input);
+  const expectedScenarioId = sealScenario(sealedInput.scenario).id!;
+  if (sealedInput.baselineReplay.scenarioId !== expectedScenarioId) {
     throw new Error("BASELINE_SCENARIO_BINDING_MISMATCH: baselineReplay.scenarioId must equal the sealed scenario id");
   }
   const observations = new Map<string, CandidateObservation>();
   const mutationIds = new Set<string>();
-  for (const o of input.candidates) {
+  for (const o of sealedInput.candidates) {
     if (o.mutation.id !== undefined) {
       if (mutationIds.has(o.mutation.id)) {
         throw new Error("DUPLICATE_MUTATION_ID: each explicit mutation.id must be unique within an episode");
@@ -91,14 +95,14 @@ export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvi
         if (observed.scenarioId !== sealedScenario.id) return MISSING_REPLAY;
         return observed;
       }
-      if (defense.id === input.baseline.id && defense.version === input.baseline.version) {
-        return input.baselineReplay;
+      if (defense.id === sealedInput.baseline.id && defense.version === sealedInput.baseline.version) {
+        return sealedInput.baselineReplay;
       }
       return MISSING_REPLAY;
     },
-    diagnose: input.diagnosis === undefined ? undefined : async () => input.diagnosis as Json,
+    diagnose: sealedInput.diagnosis === undefined ? undefined : async () => sealedInput.diagnosis as Json,
     generateCandidates: async () =>
-      input.candidates.map<Candidate>((o) => ({ mutation: o.mutation, defense: o.defense })),
+      sealedInput.candidates.map<Candidate>((o) => ({ mutation: o.mutation, defense: o.defense })),
     // screen runs first for every candidate, so it also fixes which observation is in flight.
     screen: async (candidate) => {
       inFlight = observations.get(candidateKey(candidate));
@@ -117,8 +121,8 @@ export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvi
     },
   };
 
-  return new CounterfactualImmuneForge(adapters, input.policy ?? {}).run({
-    scenario: input.scenario,
-    baseline: input.baseline,
+  return new CounterfactualImmuneForge(adapters, sealedInput.policy ?? {}).run({
+    scenario: sealedInput.scenario,
+    baseline: sealedInput.baseline,
   });
 }
