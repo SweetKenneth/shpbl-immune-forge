@@ -357,3 +357,34 @@ test("verification rejects a wrong protocol even if a caller supplies a typed-lo
   const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
   assert.equal(verifyEvidenceRoot({ ...r, protocol: "CIF/999" } as any), false);
 });
+
+
+test("malformed adapter outputs cannot clear proof gates through JavaScript truthiness", async () => {
+  const badReplay = adapters();
+  badReplay.replay = async () => ({ reproduced: "yes", attackSucceeded: true, securityScore: 0.2 } as any);
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(badReplay).run({ scenario, baseline }),
+    /INVALID_REPLAY_RESULT/,
+  );
+
+  const badImpact = adapters();
+  badImpact.screen = async () => ({ safe: "yes", reasons: [] } as any);
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(badImpact).run({ scenario, baseline }),
+    /INVALID_IMPACT_RESULT/,
+  );
+
+  const badRegression = adapters();
+  badRegression.regress = async () => ({ passed: "yes", failures: [] } as any);
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(badRegression).run({ scenario, baseline }),
+    /INVALID_REGRESSION_RESULT/,
+  );
+
+  const badCandidates = adapters();
+  badCandidates.generateCandidates = async () => null as any;
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(badCandidates).run({ scenario, baseline }),
+    /INVALID_CANDIDATE_SET/,
+  );
+});
