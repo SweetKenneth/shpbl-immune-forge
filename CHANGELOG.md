@@ -33,6 +33,8 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   capped at the same shared limit, so the server cannot export a report its own verifier refuses by size.
 - **Complete whitespace-padded stdio frames could bypass the 1 MiB request limit because size was measured after
   trimming.** Raw frame bytes are now measured before whitespace normalization.
+- **Unknown direct-library policy keys were silently ignored.** CIF/0.3 now rejects unsupported policy keys so a
+  typo cannot make a caller believe a stricter gate was applied when the engine actually used defaults.
 
 ### Added
 
