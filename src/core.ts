@@ -565,6 +565,169 @@ export class CounterfactualImmuneForge {
   }
 }
 
+
+function evidenceSemanticsAreValid(e: EpisodeEvidence): boolean {
+  const hex64 = (value: unknown): value is string =>
+    typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  const nonEmpty = (value: unknown): value is string =>
+    typeof value === "string" && value.length > 0;
+  const finite = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value);
+  const replayValid = (value: unknown): value is ReplayResult => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const r = value as ReplayResult;
+    return (
+      r.scenarioId === e.scenarioId &&
+      typeof r.reproduced === "boolean" &&
+      typeof r.attackSucceeded === "boolean" &&
+      finite(r.securityScore)
+    );
+  };
+  const impactValid = (value: unknown): value is ImpactResult => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const impact = value as ImpactResult;
+    return (
+      typeof impact.safe === "boolean" &&
+      Array.isArray(impact.reasons) &&
+      impact.reasons.every((reason) => typeof reason === "string") &&
+      (impact.riskScore === undefined || finite(impact.riskScore))
+    );
+  };
+  const regressionValid = (value: unknown): value is RegressionResult => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const regression = value as RegressionResult;
+    return (
+      typeof regression.passed === "boolean" &&
+      Array.isArray(regression.failures) &&
+      regression.failures.every((failure) => typeof failure === "string") &&
+      (regression.score === undefined || finite(regression.score))
+    );
+  };
+
+  if (!hex64(e.scenarioId) || !hex64(e.baselineHash) || !hex64(e.evidenceRoot)) return false;
+  if (!replayValid(e.baselineReplay) || !finite(e.baselineFitness)) return false;
+  if (e.baselineFitness !== e.baselineReplay.securityScore) return false;
+
+  if (typeof e.policy !== "object" || e.policy === null || Array.isArray(e.policy)) return false;
+  const policyKeys = Object.keys(e.policy).sort();
+  if (
+    policyKeys.length !== 3 ||
+    policyKeys[0] !== "requireAttackNeutralized" ||
+    policyKeys[1] !== "requireAttackReproduction" ||
+    policyKeys[2] !== "requiredFitnessMargin" ||
+    e.policy.requireAttackReproduction !== true ||
+    e.policy.requireAttackNeutralized !== true ||
+    !finite(e.policy.requiredFitnessMargin) ||
+    e.policy.requiredFitnessMargin < 0
+  ) {
+    return false;
+  }
+
+  if (!Array.isArray(e.candidates) || e.candidates.length > MAX_CANDIDATES_PER_EPISODE) return false;
+  const candidateIds = new Set<string>();
+  const qualifying: Array<{ id: string; fitness: number; index: number }> = [];
+
+  for (let index = 0; index < e.candidates.length; index += 1) {
+    const candidate = e.candidates[index];
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return false;
+    if (!nonEmpty(candidate.candidateId) || candidateIds.has(candidate.candidateId)) return false;
+    candidateIds.add(candidate.candidateId);
+    if (!hex64(candidate.mutationHash) || !hex64(candidate.defenseHash)) return false;
+    if (!impactValid(candidate.impact)) return false;
+    if (candidate.fitness !== undefined && !finite(candidate.fitness)) return false;
+
+    if (!candidate.impact.safe) {
+      if (
+        candidate.rejectedReason !== "IMPACT_SCREEN_FAILED" ||
+        candidate.replay !== undefined ||
+        candidate.regression !== undefined ||
+        candidate.fitness !== undefined
+      ) {
+        return false;
+      }
+      continue;
+    }
+
+    if (!replayValid(candidate.replay)) return false;
+    if (!candidate.replay.reproduced) {
+      if (
+        candidate.rejectedReason !== "SCENARIO_REPLAY_FAILED" ||
+        candidate.regression !== undefined ||
+        candidate.fitness !== undefined
+      ) {
+        return false;
+      }
+      continue;
+    }
+
+    if (candidate.replay.attackSucceeded) {
+      if (
+        candidate.rejectedReason !== "ATTACK_NOT_NEUTRALIZED" ||
+        candidate.regression !== undefined ||
+        candidate.fitness !== undefined
+      ) {
+        return false;
+      }
+      continue;
+    }
+
+    if (!regressionValid(candidate.regression)) return false;
+    if (!candidate.regression.passed || candidate.regression.failures.length > 0) {
+      if (candidate.rejectedReason !== "REGRESSION_GATE_FAILED" || candidate.fitness !== undefined) {
+        return false;
+      }
+      continue;
+    }
+
+    const threshold = e.baselineFitness + e.policy.requiredFitnessMargin;
+    if (candidate.fitness === undefined || !(candidate.fitness > threshold)) {
+      if (candidate.rejectedReason !== "NO_PROVEN_IMPROVEMENT") return false;
+      continue;
+    }
+
+    if (candidate.rejectedReason !== undefined) return false;
+    qualifying.push({ id: candidate.candidateId, fitness: candidate.fitness, index });
+  }
+
+  if (!e.baselineReplay.reproduced) {
+    return (
+      e.verdict === "INCONCLUSIVE" &&
+      e.reason === "BASELINE_DID_NOT_REPRODUCE" &&
+      e.candidates.length === 0 &&
+      e.winnerId === undefined &&
+      e.diagnosis === undefined
+    );
+  }
+
+  if (!e.baselineReplay.attackSucceeded) {
+    return (
+      e.verdict === "INCONCLUSIVE" &&
+      e.reason === "BASELINE_ATTACK_NOT_SUCCESSFUL" &&
+      e.candidates.length === 0 &&
+      e.winnerId === undefined &&
+      e.diagnosis === undefined
+    );
+  }
+
+  if (qualifying.length === 0) {
+    return (
+      e.verdict === "REJECTED" &&
+      e.reason === "NO_CANDIDATE_CLEARED_PROOF_GATES" &&
+      e.winnerId === undefined
+    );
+  }
+
+  let best = qualifying[0];
+  for (let i = 1; i < qualifying.length; i += 1) {
+    if (qualifying[i].fitness > best.fitness) best = qualifying[i];
+  }
+  return (
+    e.verdict === "PROMOTED" &&
+    e.reason === "PROOF_GATES_PASSED" &&
+    e.winnerId === best.id
+  );
+}
+
 export function verifyEvidenceRoot(e: EpisodeEvidence, expectedRoot?: string): boolean {
   if (!e || typeof e !== "object" || Array.isArray(e)) return false;
   const allowedTopLevel = new Set([
@@ -587,6 +750,7 @@ export function verifyEvidenceRoot(e: EpisodeEvidence, expectedRoot?: string): b
   }
   if (e.protocol !== PROTOCOL) return false;
   if (!(e.verdict === "PROMOTED" || e.verdict === "REJECTED" || e.verdict === "INCONCLUSIVE")) return false;
+  if (!evidenceSemanticsAreValid(e)) return false;
   const { evidenceRoot: root, dreamInsights: _ignored, ...core } = e;
   // A missing or malformed policy block is a failed verification, never a pass: the gates the
   // verdict was produced under are part of what the root covers.
