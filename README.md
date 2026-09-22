@@ -195,7 +195,7 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and initially merged as
 [pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169). Tenable later removed the listing
 in [pull request #187](https://github.com/tenable/cyberagents-exchange/pull/187) during its post-merge review. The
-listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.2.2 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
+listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.3.0 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
 immutability, lineage-state, and verification-anchor gaps found during adversarial review.
 Past or future listing status does not imply review, approval, certification, validation, or endorsement of
 this software by Tenable.
