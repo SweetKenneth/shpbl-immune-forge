@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHandler, createLineProcessor, handleRpc, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
+import { createHandler, createLineProcessor, handleRpc, parseEpisodeInput, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
 import { ImmuneLineage } from "../src/lineage.js";
 import { sealScenario } from "../src/core.js";
 
@@ -68,13 +68,41 @@ test("adjudication through the tool interface promotes, records lineage and veri
   assert.equal(out.evidence.verdict, "PROMOTED");
   assert.equal(out.lineageEntry.index, 0);
   const verified = parse(await call("verify_episode_evidence", { evidence: out.evidence }));
+  assert.equal(verified.internallyConsistent, true);
   assert.equal(verified.intact, true);
+  const anchored = parse(await call("verify_episode_evidence", {
+    evidence: out.evidence,
+    expectedRoot: out.evidence.evidenceRoot,
+  }));
+  assert.equal(anchored.matchesExpectedRoot, true);
+  assert.equal(anchored.intact, true);
+  const wrongAnchor = parse(await call("verify_episode_evidence", {
+    evidence: out.evidence,
+    expectedRoot: "0".repeat(64),
+  }));
+  assert.equal(wrongAnchor.internallyConsistent, true);
+  assert.equal(wrongAnchor.matchesExpectedRoot, false);
+  assert.equal(wrongAnchor.intact, false);
   const tampered = parse(await call("verify_episode_evidence", { evidence: { ...out.evidence, reason: "edited" } }));
   assert.equal(tampered.intact, false);
   const report = parse(await call("export_immune_lineage_report", {}));
   assert.equal(report.intact, true);
   const reverified = parse(await call("verify_immune_lineage", { entries: report.entries }));
+  assert.equal(reverified.internallyConsistent, true);
   assert.equal(reverified.intact, true);
+  const anchoredLineage = parse(await call("verify_immune_lineage", {
+    entries: report.entries,
+    expectedHeadHash: report.headHash,
+  }));
+  assert.equal(anchoredLineage.matchesExpectedHeadHash, true);
+  assert.equal(anchoredLineage.intact, true);
+  const wrongLineageAnchor = parse(await call("verify_immune_lineage", {
+    entries: report.entries,
+    expectedHeadHash: "f".repeat(64),
+  }));
+  assert.equal(wrongLineageAnchor.internallyConsistent, true);
+  assert.equal(wrongLineageAnchor.matchesExpectedHeadHash, false);
+  assert.equal(wrongLineageAnchor.intact, false);
   const cleared = parse(await call("reset_state", {}));
   assert.equal(cleared.reset, true);
   assert.equal(parse(await call("export_immune_lineage_report", {})).entries.length, 0);
@@ -233,4 +261,32 @@ test("candidates that share a defense version are judged on their own replay", a
   assert.equal(weak.replay.attackSucceeded, true);
   assert.equal(weak.rejectedReason, "ATTACK_NOT_NEUTRALIZED");
   assert.equal(out.evidence.winnerId, "cand-a");
+});
+
+
+test("JSON __proto__ keys remain data and cannot mutate parser object prototypes", () => {
+  const payload = JSON.parse('{"__proto__":{"polluted":true},"safe":1}');
+  const changedScenario = { ...episodeScenario, payload };
+  const parsed = parseEpisodeInput({
+    ...episode,
+    scenario: changedScenario,
+    baselineReplay: {
+      ...episode.baselineReplay,
+      scenarioId: sealScenario(changedScenario).id!,
+    },
+    candidates: [],
+  });
+  const parsedPayload = parsed.scenario.payload as any;
+  assert.equal(Object.prototype.hasOwnProperty.call(parsedPayload, "__proto__"), true);
+  assert.equal(parsedPayload.__proto__.polluted, true);
+  assert.equal(({} as any).polluted, undefined);
+});
+
+test("advertised replay schemas require scenario binding", async () => {
+  const call = createHandler();
+  const list: any = await handleRpc({ jsonrpc: "2.0", id: 31, method: "tools/list" }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  assert.ok(tool.inputSchema.properties.baselineReplay.required.includes("scenarioId"));
+  const replayRequired = tool.inputSchema.properties.candidates.items.properties.replay.required;
+  assert.ok(replayRequired.includes("scenarioId"));
 });
