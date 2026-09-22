@@ -43,7 +43,7 @@ necessarily uses the host process's stdin/stdout.
    in `CIF/0.3`; a high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
 8. Score the baseline and each candidate on the same caller-defined fitness scale, then require a finite candidate score strictly above the explicit baseline fitness plus the configured margin.
-9. Record every rejected candidate with a machine-readable reason.
+9. Record every candidate's cryptographic identity and gate evidence, including a machine-readable rejection reason when rejected.
 10. Return `PROMOTED` for at most the single highest-scoring candidate that cleared every gate.
 11. Seal the episode as a Merkle evidence root.
 12. Run optional DREAM exploration **after** sealing, on the sealed evidence only. It cannot change the
@@ -91,9 +91,9 @@ MCP client configuration:
 ## Outputs
 
 Every tool returns JSON text content. `adjudicate_defensive_mutation` returns the verdict
-(`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the promoted candidate if any, every rejected candidate with its
-machine-readable reason, the sealed scenario hash, the SHA-256 Merkle evidence root, and the appended lineage
-entry. `verify_episode_evidence` and `verify_immune_lineage` report internal CIF/0.3 semantic-and-hash consistency and can optionally
+(`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the winning candidate ID if any, each candidate's mutation/defense
+hashes and gate observations, machine-readable rejection reasons, the sealed scenario hash, the SHA-256 Merkle
+evidence root, and the appended lineage entry. `verify_episode_evidence` and `verify_immune_lineage` report internal CIF/0.3 semantic-and-hash consistency and can optionally
 compare against an independently retained expected evidence root / lineage head. `export_immune_lineage_report`
 returns the hash-linked lineage plus verdict counts, and `describe_policy`
 returns the versions, thresholds, input limits, and rejection-reason vocabulary in force. Nothing is written to
@@ -176,6 +176,8 @@ verifyEvidenceRoot(evidence);  // true
   historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
   self-consistent artifact. Supply `expectedRoot` / `expectedHeadHash` when you need an external anchor.
 - Verification never proves the reported observations were true.
+- Episode evidence stores candidate IDs plus mutation/defense hashes, not full candidate bodies. Retain the original
+  candidate definitions if later review must inspect their exact patch/state content.
 
 ## Provenance
 
