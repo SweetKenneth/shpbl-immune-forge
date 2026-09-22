@@ -458,6 +458,22 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
   };
 }
 
+
+function validInitializeParams(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const p = value as Record<string, unknown>;
+  if (typeof p.protocolVersion !== "string" || p.protocolVersion.length === 0) return false;
+  if (typeof p.capabilities !== "object" || p.capabilities === null || Array.isArray(p.capabilities)) return false;
+  if (typeof p.clientInfo !== "object" || p.clientInfo === null || Array.isArray(p.clientInfo)) return false;
+  const info = p.clientInfo as Record<string, unknown>;
+  return (
+    typeof info.name === "string" &&
+    info.name.length > 0 &&
+    typeof info.version === "string" &&
+    info.version.length > 0
+  );
+}
+
 interface RpcRequest {
   jsonrpc?: string;
   id?: number | string | null;
@@ -490,6 +506,9 @@ export async function handleRpc(
   const reply = (result: unknown) => ({ jsonrpc: "2.0", id, result });
   switch (method) {
     case "initialize":
+      if (!validInitializeParams(params)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid initialize params" } };
+      }
       return reply({
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {} },
