@@ -94,7 +94,7 @@ MCP client configuration:
 Every tool returns JSON text content. `adjudicate_defensive_mutation` returns the verdict
 (`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the promoted candidate if any, every rejected candidate with its
 machine-readable reason, the sealed scenario hash, the SHA-256 Merkle evidence root, and the appended lineage
-entry. `verify_episode_evidence` and `verify_immune_lineage` report internal hash consistency and can optionally
+entry. `verify_episode_evidence` and `verify_immune_lineage` report internal CIF/0.3 semantic-and-hash consistency and can optionally
 compare against an independently retained expected evidence root / lineage head. `export_immune_lineage_report`
 returns the hash-linked lineage plus verdict counts, and `describe_policy`
 returns the versions, thresholds, input limits, and rejection-reason vocabulary in force. Nothing is written to
@@ -173,7 +173,7 @@ verifyEvidenceRoot(evidence);  // true
   provide `baselineFitness()`, so the baseline and candidate scores share the evaluator-defined scale. The Forge
   enforces only "strictly better than baseline, by at least the configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
-- Hash verification without an independently retained expected root/head proves **internal consistency**, not
+- CIF verification without an independently retained expected root/head proves **internal semantic-and-hash consistency**, not
   historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
   self-consistent artifact. Supply `expectedRoot` / `expectedHeadHash` when you need an external anchor.
 - Verification never proves the reported observations were true.
