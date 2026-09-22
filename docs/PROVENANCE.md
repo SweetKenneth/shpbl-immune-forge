@@ -13,7 +13,7 @@ skipped and none can be reordered. The novelty is the enforced ordering plus the
 candidates, not any individual step.
 
 ## Public IP surface
-Released publicly: the protocol shape (`CIF/0.2`), the gate ordering, the evidence-root construction, the
+Released publicly: the protocol shape (`CIF/0.3`), the gate ordering, the evidence-root construction, the
 MCP tool surface, and this implementation. Not released: any SHPBL private engine, corpus, harvested body,
 scoring internals, or catalog material. The public bytes were written for release; nothing was copied out of
 the private library.
