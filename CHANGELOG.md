@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.1 — 2026-09-22
+
+Submission-hardening release. Adjudication semantics and `CIF/0.2` evidence remain unchanged.
+
+### Fixed
+
+- Complete newline-delimited requests are separated before size enforcement, so an oversized request cannot
+  swallow an adjacent valid request delivered in the same transport chunk.
+- JSON-RPC batch arrays, wrong protocol versions, and malformed request envelopes now fail explicitly with
+  `-32600` instead of being silently treated as notifications.
+- Added the lockfile required for reproducible `npm ci` installation and changed CI to use it.
+- Corrected stale provenance and Exchange-status wording; added the required Tenable `domains` field to the
+  listing draft.
+
+### Added
+
+- Three transport regression tests (47 total).
+
 ## 0.2.0 — 2026-09-19
 
 Hardening pass over the v0.1.0 release. Protocol bumped to `CIF/0.2` because the evidence root now covers an
