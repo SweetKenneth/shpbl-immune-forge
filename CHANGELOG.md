@@ -52,6 +52,9 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   evaluator could suppress an episode that should have been `INCONCLUSIVE`. Fitness is now evaluated only after
   the baseline replay both reproduces the event and reports the attack succeeding; inconclusive evidence omits
   `baselineFitness` entirely.
+- **A recomputed lineage could be hash-consistent while carrying impossible entry semantics.** CIF-LINEAGE/0.1
+  verification now validates verdict/reason/winner relationships, hash-shaped identifiers, entry shape and index
+  semantics in addition to link hashes; it still does not claim to re-prove an episode from its root alone.
 
 ### Added
 
