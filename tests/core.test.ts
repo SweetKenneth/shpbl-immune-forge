@@ -558,3 +558,50 @@ test("verification rejects a recomputed winner that is not the first highest-fit
   const forged = recomputeEvidenceRoot({ ...r, winnerId: "second" });
   assert.equal(verifyEvidenceRoot(forged), false);
 });
+
+
+test("adapter outputs cannot smuggle unknown proof claims into sealed evidence", async () => {
+  const a = adapters();
+  a.replay = async (_scenario, defense) =>
+    ({
+      reproduced: true,
+      attackSucceeded: defense.id === "base",
+      securityScore: defense.id === "base" ? 0.2 : 0.9,
+      tenableApproved: true,
+    } as any);
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /INVALID_REPLAY_RESULT: replay contains unsupported field tenableApproved/,
+  );
+});
+
+test("verification rejects recomputed nested candidate claim smuggling", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  const forged = recomputeEvidenceRoot({
+    ...r,
+    candidates: [{ ...r.candidates[0], tenableApproved: true }],
+  });
+  assert.equal(verifyEvidenceRoot(forged), false);
+});
+
+test("direct candidates and defenses reject unknown protocol fields", async () => {
+  const badCandidate = adapters();
+  badCandidate.generateCandidates = async () =>
+    [{
+      mutation: { description: "x", patch: {} },
+      defense: { id: "candidate", version: "2" },
+      hiddenAuthority: "yes",
+    } as any];
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(badCandidate).run({ scenario, baseline }),
+    /INVALID_CANDIDATE: candidate\[0\] contains unsupported field hiddenAuthority/,
+  );
+
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(adapters()).run({
+      scenario,
+      baseline: { ...baseline, hiddenAuthority: "yes" } as any,
+    }),
+    /INVALID_DEFENSE: baseline contains unsupported field hiddenAuthority/,
+  );
+});
