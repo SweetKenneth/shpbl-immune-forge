@@ -24,6 +24,15 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   consistency separately from anchor matching.
 - **Canonical sealing accepted non-JSON objects and could recurse through cycles.** The sealing/snapshot layer
   now rejects cyclic, non-finite, executable and non-plain-object values instead of collapsing or recursing them.
+- **The data-driven library API retained caller-owned mutable objects across async boundaries.** Episodes are
+  now deeply snapshotted before validation/evaluation so late caller mutations cannot change a sealed decision.
+- **The core library trusted TypeScript-only adapter shapes at runtime.** Replay, impact, regression, scenario,
+  defense and candidate values are now runtime-validated so JavaScript truthiness or malformed objects cannot
+  clear proof gates or create malformed evidence.
+- **Session lineage could grow beyond the verifier's advertised 10,000-entry limit.** Lineage storage is now
+  capped at the same shared limit, so the server cannot export a report its own verifier refuses by size.
+- **Complete whitespace-padded stdio frames could bypass the 1 MiB request limit because size was measured after
+  trimming.** Raw frame bytes are now measured before whitespace normalization.
 
 ### Added
 
