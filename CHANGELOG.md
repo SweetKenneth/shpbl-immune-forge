@@ -10,10 +10,26 @@ Adversarial promotion-soundness hardening.
 - **Data-driven candidate replay observations were associated with an episode but not cryptographically bound to its sealed scenario.** Candidate replays must now carry the sealed `scenarioId`; missing or mismatched bindings fail the replay gate. This binds the reporter's claim to the episode without claiming to prove an external harness was truthful.
 - **Negative fitness margins could weaken the positive-improvement gate.** `requiredFitnessMargin` is now required to be finite and non-negative at both library and MCP boundaries.
 - **Duplicate explicit mutation IDs were only rejected by the MCP parser.** The library adjudication API now enforces the same uniqueness invariant, preventing ambiguous `winnerId` values.
+- **Adapter outputs and post-proof DREAM evidence were only shallowly protected.** Scenario, replay, candidate,
+  regression, policy and final evidence snapshots are now deeply immutable JSON-compatible values; DREAM receives
+  the sealed snapshot and cannot rewrite or suppress the decision.
+- **Core replay did not receive candidate identity.** Two mutations sharing one defense identity could be
+  conflated by an adapter. Candidate replay now receives the candidate as context, while existing two-argument
+  adapters remain compatible.
+- **The 256-candidate limit was MCP-only.** The core library now enforces the same limit.
+- **Returned lineage entries could mutate internal lineage state, and append accepted tampered evidence.**
+  Appended evidence is integrity-checked and stored/returned as an immutable entry.
+- **Self-consistent replacement artifacts could be mistaken for externally anchored integrity.** Evidence and
+  lineage verification now optionally accept an independently retained expected root/head and report internal
+  consistency separately from anchor matching.
+- **Canonical sealing accepted non-JSON objects and could recurse through cycles.** The sealing/snapshot layer
+  now rejects cyclic, non-finite, executable and non-plain-object values instead of collapsing or recursing them.
 
 ### Added
 
-- Adversarial regressions covering baseline-not-defeated episodes, wrong scenario bindings, duplicate library mutation IDs, and negative policy margins.
+- Adversarial regressions covering baseline-not-defeated episodes, wrong scenario bindings, duplicate library
+  mutation IDs, negative policy margins, post-proof mutation attempts, contradictory regression results,
+  candidate-ID collisions, non-JSON sealing, lineage mutation, core replay identity, and library candidate limits.
 
 
 ## 0.2.1 — 2026-09-22
