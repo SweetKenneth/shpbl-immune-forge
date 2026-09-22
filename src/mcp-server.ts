@@ -531,8 +531,15 @@ export async function handleRpc(
     case "prompts/list":
       return reply({ prompts: [] });
     case "tools/call": {
-      const name = typeof params?.name === "string" ? params.name : "";
-      return reply(await callTool(name, params?.arguments ?? {}));
+      if (typeof params !== "object" || params === null || Array.isArray(params)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid tools/call params" } };
+      }
+      const name = typeof params.name === "string" && params.name.length > 0 ? params.name : "";
+      const args = params.arguments ?? {};
+      if (!name || typeof args !== "object" || args === null || Array.isArray(args)) {
+        return { jsonrpc: "2.0", id, error: { code: -32602, message: "invalid tools/call params" } };
+      }
+      return reply(await callTool(name, args));
     }
     default:
       return { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } };
