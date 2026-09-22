@@ -186,7 +186,7 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
       seenId.add(c.mutation.id);
     }
   });
-  const policyRaw = a.policy === undefined ? {} : exactObj(a.policy, "policy", ["requiredFitnessMargin"]);
+  const policyRaw = a.policy === undefined ? {} : obj(a.policy, "policy");
   for (const key of Object.keys(policyRaw)) {
     if (key !== "requiredFitnessMargin") {
       throw new InputError(`policy.${key} is not supported; CIF/0.3 proof gates are mandatory`);
@@ -279,7 +279,7 @@ export const TOOLS = [
         scenario: {
           type: "object",
           additionalProperties: false,
-          required: ["kind", "expectedSecurityProperty"],
+          required: ["kind", "payload", "expectedSecurityProperty"],
           properties: {
             kind: { type: "string", minLength: 1, maxLength: 4096 },
             payload: {},
@@ -318,7 +318,7 @@ export const TOOLS = [
               mutation: {
                 type: "object",
                 additionalProperties: false,
-                required: ["description"],
+                required: ["description", "patch"],
                 properties: {
                   id: { type: "string", minLength: 1, maxLength: 4096 },
                   description: { type: "string", minLength: 1, maxLength: 4096 },
