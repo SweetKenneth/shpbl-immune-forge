@@ -400,13 +400,15 @@ export class CounterfactualImmuneForge {
   }
 }
 
-export function verifyEvidenceRoot(e: EpisodeEvidence): boolean {
+export function verifyEvidenceRoot(e: EpisodeEvidence, expectedRoot?: string): boolean {
   const { evidenceRoot: root, dreamInsights: _ignored, ...core } = e;
   // A missing or malformed policy block is a failed verification, never a pass: the gates the
   // verdict was produced under are part of what the root covers.
   if (!core.policy || typeof core.policy !== "object") return false;
   try {
-    return episodeRoot(core) === root;
+    const internallyConsistent = episodeRoot(core) === root;
+    if (!internallyConsistent) return false;
+    return expectedRoot === undefined || root === expectedRoot;
   } catch {
     return false;
   }
