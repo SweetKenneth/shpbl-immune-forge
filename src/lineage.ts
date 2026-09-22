@@ -1,6 +1,6 @@
 // Immune lineage: a hash-linked ledger of sealed episode decisions.
 // SPDX-License-Identifier: MIT
-import { hash, type EpisodeEvidence, type Verdict } from "./core.js";
+import { hash, verifyEvidenceRoot, type EpisodeEvidence, type Verdict } from "./core.js";
 
 export interface LineageEntry {
   index: number;
@@ -27,6 +27,9 @@ export class ImmuneLineage {
   private readonly entries: LineageEntry[] = [];
 
   append(evidence: EpisodeEvidence): LineageEntry {
+    if (!verifyEvidenceRoot(evidence)) {
+      throw new Error("INVALID_EPISODE_EVIDENCE: lineage accepts only internally consistent sealed evidence");
+    }
     const previousEntryHash = this.entries.length
       ? this.entries[this.entries.length - 1].entryHash
       : GENESIS;
@@ -39,7 +42,7 @@ export class ImmuneLineage {
       episodeRoot: evidence.evidenceRoot,
       previousEntryHash,
     };
-    const entry: LineageEntry = { ...core, entryHash: hash(core) };
+    const entry: LineageEntry = Object.freeze({ ...core, entryHash: hash(core) });
     this.entries.push(entry);
     return entry;
   }
