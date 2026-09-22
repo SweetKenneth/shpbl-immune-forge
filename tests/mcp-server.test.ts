@@ -290,3 +290,18 @@ test("advertised replay schemas require scenario binding", async () => {
   const replayRequired = tool.inputSchema.properties.candidates.items.properties.replay.required;
   assert.ok(replayRequired.includes("scenarioId"));
 });
+
+
+test("transport errors cannot leapfrog earlier queued requests", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push(
+    JSON.stringify({ jsonrpc: "2.0", id: 41, method: "ping" }) +
+      "\n" +
+      "x".repeat(POLICY.maxRequestBytes + 1) +
+      "\n",
+  );
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).id, 41);
+  assert.equal(JSON.parse(written[1]).error.code, -32600);
+});
