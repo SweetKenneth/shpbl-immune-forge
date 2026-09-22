@@ -29,7 +29,16 @@ function parse(result: { content: { text: string }[] }): any {
 
 test("initialize, ping and tools/list answer the MCP handshake", async () => {
   const call = createHandler();
-  const init: any = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" }, call);
+  const init: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "test-client", version: "1.0.0" },
+    },
+  }, call);
   assert.equal(init.result.serverInfo.name, "shpbl-counterfactual-immune-forge");
   assert.equal(init.result.protocolVersion, "2025-11-25");
   assert.deepEqual(Object.keys(init.result.capabilities), ["tools"]);
@@ -41,6 +50,19 @@ test("initialize, ping and tools/list answer the MCP handshake", async () => {
     assert.ok(tool.description.length > 40, `${tool.name} needs a real description`);
     assert.equal(tool.inputSchema.type, "object");
   }
+});
+
+test("malformed initialize params fail closed", async () => {
+  const call = createHandler();
+  const missing: any = await handleRpc({ jsonrpc: "2.0", id: 101, method: "initialize" }, call);
+  assert.equal(missing.error.code, -32602);
+  const incomplete: any = await handleRpc({
+    jsonrpc: "2.0",
+    id: 102,
+    method: "initialize",
+    params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "x" } },
+  }, call);
+  assert.equal(incomplete.error.code, -32602);
 });
 
 test("notifications get no response and unknown methods error", async () => {
