@@ -253,8 +253,22 @@ export function immutableSnapshot<T>(value: T): T {
   return walk(value) as T;
 }
 
+function rejectUnknownKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  code: string,
+  field: string,
+): void {
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(value).find((key) => !allowedSet.has(key));
+  if (unknown !== undefined) {
+    throw new Error(`${code}: ${field} contains unsupported field ${unknown}`);
+  }
+}
+
 function validateReplayResult(replay: ReplayResult, scenarioId: string): Readonly<ReplayResult> {
   const snapshot = immutableSnapshot(replay);
+  rejectUnknownKeys(snapshot as unknown as Record<string, unknown>, ["scenarioId", "reproduced", "attackSucceeded", "securityScore", "state", "trace"], "INVALID_REPLAY_RESULT", "replay");
   if (
     typeof snapshot.reproduced !== "boolean" ||
     typeof snapshot.attackSucceeded !== "boolean" ||
@@ -274,6 +288,7 @@ function validateReplayResult(replay: ReplayResult, scenarioId: string): Readonl
 
 function validateImpactResult(impact: ImpactResult): Readonly<ImpactResult> {
   const snapshot = immutableSnapshot(impact);
+  rejectUnknownKeys(snapshot as unknown as Record<string, unknown>, ["safe", "reasons", "riskScore"], "INVALID_IMPACT_RESULT", "impact");
   if (
     typeof snapshot.safe !== "boolean" ||
     !Array.isArray(snapshot.reasons) ||
@@ -288,6 +303,7 @@ function validateImpactResult(impact: ImpactResult): Readonly<ImpactResult> {
 
 function validateRegressionResult(regression: RegressionResult): Readonly<RegressionResult> {
   const snapshot = immutableSnapshot(regression);
+  rejectUnknownKeys(snapshot as unknown as Record<string, unknown>, ["passed", "failures", "score"], "INVALID_REGRESSION_RESULT", "regression");
   if (
     typeof snapshot.passed !== "boolean" ||
     !Array.isArray(snapshot.failures) ||
@@ -305,6 +321,7 @@ function validateDefense(defense: Defense, field: string): Readonly<Defense> {
     throw new Error(`INVALID_DEFENSE: ${field} must be an object`);
   }
   const d = snapshot as Record<string, unknown>;
+  rejectUnknownKeys(d, ["id", "version", "state"], "INVALID_DEFENSE", field);
   if (typeof d.id !== "string" || d.id.length === 0 || typeof d.version !== "string" || d.version.length === 0) {
     throw new Error(`INVALID_DEFENSE: ${field}.id and ${field}.version must be non-empty strings`);
   }
@@ -317,10 +334,12 @@ function validateCandidate(candidate: Candidate, index: number): Readonly<Candid
     throw new Error(`INVALID_CANDIDATE: candidate[${index}] must be an object`);
   }
   const c = snapshot as Record<string, unknown>;
+  rejectUnknownKeys(c, ["mutation", "defense"], "INVALID_CANDIDATE", `candidate[${index}]`);
   if (typeof c.mutation !== "object" || c.mutation === null || Array.isArray(c.mutation)) {
     throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation must be an object`);
   }
   const mutation = c.mutation as Record<string, unknown>;
+  rejectUnknownKeys(mutation, ["id", "description", "patch"], "INVALID_CANDIDATE", `candidate[${index}].mutation`);
   if (typeof mutation.description !== "string" || mutation.description.length === 0) {
     throw new Error(`INVALID_CANDIDATE: candidate[${index}].mutation.description must be a non-empty string`);
   }
@@ -340,6 +359,7 @@ export function sealScenario(s: Scenario): Readonly<Scenario> {
     throw new Error("INVALID_SCENARIO: scenario must be an object");
   }
   const raw = source as Record<string, unknown>;
+  rejectUnknownKeys(raw, ["id", "kind", "payload", "expectedSecurityProperty"], "INVALID_SCENARIO", "scenario");
   if (typeof raw.kind !== "string" || raw.kind.length === 0) {
     throw new Error("INVALID_SCENARIO: scenario.kind must be a non-empty string");
   }
