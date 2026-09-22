@@ -15,7 +15,7 @@ import {
 import { ImmuneLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
-export const SERVER_VERSION = "0.2.1";
+export const SERVER_VERSION = "0.2.2";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
 export const POLICY = {
@@ -92,6 +92,7 @@ function json(value: unknown, field: string): Json {
 function replay(value: unknown, field: string): ReplayResult {
   const r = obj(value, field);
   return {
+    ...(r.scenarioId === undefined ? {} : { scenarioId: str(r.scenarioId, `${field}.scenarioId`) }),
     reproduced: bool(r.reproduced, `${field}.reproduced`),
     attackSucceeded: bool(r.attackSucceeded, `${field}.attackSucceeded`),
     securityScore: num(r.securityScore, `${field}.securityScore`),
@@ -182,7 +183,11 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
     policy: {
       ...(policyRaw.requiredFitnessMargin === undefined
         ? {}
-        : { requiredFitnessMargin: num(policyRaw.requiredFitnessMargin, "policy.requiredFitnessMargin") }),
+        : { requiredFitnessMargin: (() => {
+            const margin = num(policyRaw.requiredFitnessMargin, "policy.requiredFitnessMargin");
+            if (margin < 0) throw new InputError("policy.requiredFitnessMargin must be non-negative");
+            return margin;
+          })() }),
       ...(policyRaw.requireAttackReproduction === undefined
         ? {}
         : {
