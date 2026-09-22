@@ -395,3 +395,28 @@ test("complete whitespace-padded frames cannot bypass the raw request byte limit
   assert.equal(response.error.code, -32600);
   assert.equal(response.id, null);
 });
+
+
+test("MCP inconclusive episodes may omit baselineFitness but qualifying episodes may not", async () => {
+  const call = createHandler();
+  const inconclusive = parse(await call("adjudicate_defensive_mutation", {
+    ...episode,
+    baselineFitness: undefined,
+    baselineReplay: {
+      scenarioId: sealedScenarioId,
+      reproduced: false,
+      attackSucceeded: false,
+      securityScore: 0.2,
+    },
+  }));
+  assert.equal(inconclusive.evidence.verdict, "INCONCLUSIVE");
+  assert.equal(inconclusive.evidence.baselineFitness, undefined);
+
+  const qualifying = await call("adjudicate_defensive_mutation", { ...episode, baselineFitness: undefined });
+  assert.equal(qualifying.isError, true);
+  assert.match(qualifying.content[0].text, /INVALID_BASELINE_FITNESS/);
+
+  const list: any = await handleRpc({ jsonrpc: "2.0", id: 141, method: "tools/list" }, call);
+  const tool = list.result.tools.find((t: any) => t.name === "adjudicate_defensive_mutation");
+  assert.equal(tool.inputSchema.required.includes("baselineFitness"), false);
+});
