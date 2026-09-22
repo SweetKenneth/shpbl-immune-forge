@@ -82,7 +82,12 @@ export interface ForgeAdapters {
   ): Promise<RegressionResult>;
   /** EVOLUTION: policy-owned fitness. The Forge requires a positive delta; the adapter defines score semantics. */
   fitness(
-    result: { replay: ReplayResult; regression: RegressionResult; impact: ImpactResult },
+    result: {
+      candidate: Readonly<Candidate>;
+      replay: ReplayResult;
+      regression: RegressionResult;
+      impact: ImpactResult;
+    },
     context: { baselineReplay: ReplayResult },
   ): number;
   /** DREAM is post-proof and evidence-fed. It cannot alter the verdict or the evidence root. */
@@ -442,7 +447,7 @@ export class CounterfactualImmuneForge {
         continue;
       }
       const scored = this.adapters.fitness(
-        { replay: ev.replay, regression: ev.regression, impact: ev.impact },
+        { candidate: c, replay: ev.replay, regression: ev.regression, impact: ev.impact },
         { baselineReplay },
       );
       // A non-finite score is recorded as an unproven improvement rather than sealed: it is not a
