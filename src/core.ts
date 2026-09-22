@@ -152,20 +152,41 @@ export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
 }
 
 export function canonical(value: unknown): string {
-  if (value === undefined) return "null";
-  if (typeof value === "number" && !Number.isFinite(value)) {
-    // JSON.stringify would silently turn NaN/Infinity into "null" and let two different
-    // observations share one hash. A sealing function must never accept that.
-    throw new TypeError("CIF_NON_FINITE_NUMBER: non-finite numbers cannot be sealed");
-  }
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  return `{${Object.keys(obj)
-    .sort()
-    .filter((k) => obj[k] !== undefined)
-    .map((k) => `${JSON.stringify(k)}:${canonical(obj[k])}`)
-    .join(",")}}`;
+  const ancestors = new WeakSet<object>();
+  const walk = (v: unknown): string => {
+    if (v === undefined) return "null";
+    if (v === null) return "null";
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) {
+        throw new TypeError("CIF_NON_FINITE_NUMBER: non-finite numbers cannot be sealed");
+      }
+      return JSON.stringify(v);
+    }
+    if (typeof v === "string" || typeof v === "boolean") return JSON.stringify(v);
+    if (typeof v !== "object") {
+      throw new TypeError("CIF_UNSUPPORTED_VALUE: only JSON-compatible values can be sealed");
+    }
+    if (ancestors.has(v)) {
+      throw new TypeError("CIF_CYCLIC_VALUE: cyclic values cannot be sealed");
+    }
+    ancestors.add(v);
+    try {
+      if (Array.isArray(v)) return `[${v.map((item) => walk(item)).join(",")}]`;
+      const prototype = Object.getPrototypeOf(v);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new TypeError("CIF_UNSUPPORTED_OBJECT: only plain JSON objects can be sealed");
+      }
+      const obj = v as Record<string, unknown>;
+      return `{${Object.keys(obj)
+        .sort()
+        .filter((k) => obj[k] !== undefined)
+        .map((k) => `${JSON.stringify(k)}:${walk(obj[k])}`)
+        .join(",")}}`;
+    } finally {
+      ancestors.delete(v);
+    }
+  };
+  return walk(value);
 }
 
 export function hash(value: unknown): string {
@@ -173,23 +194,40 @@ export function hash(value: unknown): string {
 }
 
 export function immutableSnapshot<T>(value: T): T {
-  const seen = new WeakSet<object>();
+  const ancestors = new WeakSet<object>();
   const walk = (v: unknown): unknown => {
-    if (v === null || typeof v !== "object") return v;
-    if (seen.has(v)) throw new TypeError("CIF_CYCLIC_VALUE: cyclic values cannot be snapshotted");
-    seen.add(v);
-    if (Array.isArray(v)) return Object.freeze(v.map((item) => walk(item)));
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(v as Record<string, unknown>)) {
-      if (item === undefined) continue;
-      Object.defineProperty(out, key, {
-        value: walk(item),
-        enumerable: true,
-        writable: false,
-        configurable: false,
-      });
+    if (v === undefined || v === null || typeof v === "string" || typeof v === "boolean") return v;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) {
+        throw new TypeError("CIF_NON_FINITE_NUMBER: non-finite numbers cannot be snapshotted");
+      }
+      return v;
     }
-    return Object.freeze(out);
+    if (typeof v !== "object") {
+      throw new TypeError("CIF_UNSUPPORTED_VALUE: only JSON-compatible values can be snapshotted");
+    }
+    if (ancestors.has(v)) throw new TypeError("CIF_CYCLIC_VALUE: cyclic values cannot be snapshotted");
+    ancestors.add(v);
+    try {
+      if (Array.isArray(v)) return Object.freeze(v.map((item) => walk(item)));
+      const prototype = Object.getPrototypeOf(v);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new TypeError("CIF_UNSUPPORTED_OBJECT: only plain JSON objects can be snapshotted");
+      }
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(v as Record<string, unknown>)) {
+        if (item === undefined) continue;
+        Object.defineProperty(out, key, {
+          value: walk(item),
+          enumerable: true,
+          writable: false,
+          configurable: false,
+        });
+      }
+      return Object.freeze(out);
+    } finally {
+      ancestors.delete(v);
+    }
   };
   return walk(value) as T;
 }
