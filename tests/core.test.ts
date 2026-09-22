@@ -283,3 +283,12 @@ test("explicit candidate IDs cannot collide with derived candidate IDs", async (
     /DUPLICATE_CANDIDATE_ID/,
   );
 });
+
+
+test("canonical sealing rejects cyclic and non-JSON values instead of collapsing them", () => {
+  const cyclic: any = { a: 1 };
+  cyclic.self = cyclic;
+  assert.throws(() => hash(cyclic), /CIF_CYCLIC_VALUE/);
+  assert.throws(() => hash({ fn: () => 1 } as any), /CIF_UNSUPPORTED_VALUE/);
+  assert.throws(() => hash(new Date(0) as any), /CIF_UNSUPPORTED_OBJECT/);
+});
