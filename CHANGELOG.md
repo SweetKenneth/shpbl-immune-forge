@@ -36,6 +36,9 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   trimming.** Raw frame bytes are now measured before whitespace normalization.
 - **Unknown direct-library policy keys were silently ignored.** CIF/0.3 now rejects unsupported policy keys so a
   typo cannot make a caller believe a stricter gate was applied when the engine actually used defaults.
+- **Direct-library verification accepted some distinct JavaScript representations with the same canonical hash.**
+  Explicit `undefined` optional properties and sparse arrays could normalize to omission / `null` without
+  changing the Merkle root. Verification now requires a strict JSON representation before semantic/hash checks.
 - **A caller could recompute a Merkle root over semantically impossible CIF evidence and still obtain internal hash consistency.**
   Verification now enforces the CIF/0.3 state machine itself: mandatory policy values, baseline/verdict consistency,
   candidate gate sequencing, rejection reasons, winner selection, candidate identity uniqueness and score thresholds.
