@@ -44,6 +44,10 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   validates required initialize fields and targets the 2025-11-25 initialize-based MCP revision.
 - **The secret-scan workflow could fail before scanning on pull requests.** Gitleaks now receives the repository's
   automatically issued read-scoped GitHub token required by the action's PR mode.
+- **Baseline fitness was evaluated before baseline reproduction had authority.** A throwing or invalid fitness
+  evaluator could suppress an episode that should have been `INCONCLUSIVE`. Fitness is now evaluated only after
+  the baseline replay both reproduces the event and reports the attack succeeding; inconclusive evidence omits
+  `baselineFitness` entirely.
 
 ### Added
 
