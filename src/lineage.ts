@@ -22,11 +22,21 @@ export interface LineageReport {
 }
 
 const GENESIS = hash("CIF-LINEAGE/0.1:genesis");
+export const MAX_LINEAGE_ENTRIES = 10_000 as const;
 
 export class ImmuneLineage {
   private readonly entries: LineageEntry[] = [];
 
+  constructor(private readonly maxEntries: number = MAX_LINEAGE_ENTRIES) {
+    if (!Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_LINEAGE_ENTRIES) {
+      throw new Error(`INVALID_LINEAGE_LIMIT: maxEntries must be an integer from 1 to ${MAX_LINEAGE_ENTRIES}`);
+    }
+  }
+
   append(evidence: EpisodeEvidence): LineageEntry {
+    if (this.entries.length >= this.maxEntries) {
+      throw new Error(`LINEAGE_LIMIT_EXCEEDED: lineage is capped at ${this.maxEntries} entries`);
+    }
     if (!verifyEvidenceRoot(evidence)) {
       throw new Error("INVALID_EPISODE_EVIDENCE: lineage accepts only internally consistent sealed evidence");
     }
