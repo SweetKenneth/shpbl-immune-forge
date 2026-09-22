@@ -32,10 +32,10 @@ files, sockets, processes, or environment variables.
 `CIF/0.2`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
-2. Reproduce the baseline against it. If it does not reproduce → `INCONCLUSIVE`; no candidate is evaluated.
+2. Reproduce the baseline against it. With the default reproduction gate, it must both reproduce **and report the attack succeeding**; otherwise → `INCONCLUSIVE` and no candidate is evaluated.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
-5. Require each survivor's supplied replay observation to be bound to the *same sealed scenario*.
+5. Require each survivor's supplied replay observation to carry the hash of the *same sealed scenario*. A missing or mismatched binding fails the replay gate.
 6. Reject any candidate whose own replay still reports the attack succeeding (`requireAttackNeutralized`,
    on by default). A high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
@@ -68,7 +68,7 @@ git clone https://github.com/SweetKenneth/shpbl-immune-forge.git
 cd shpbl-immune-forge
 npm install      # devDependencies only: typescript, @types/node
 npm run build    # compiles to dist/
-   npm test         # 47 conformance, tamper, and boundary tests
+   npm test         # conformance, tamper, adversarial, and boundary tests
 npm start        # starts the MCP server on stdio
 ```
 
@@ -108,14 +108,14 @@ disk and nothing is sent anywhere — the caller keeps whatever it chooses to ke
 | `reset_state` | Clears session lineage. Previously exported reports stay independently verifiable. |
 
 The MCP surface is **data-driven**: your own harness runs the attack and the regression suite and reports what
-it observed. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
+it observed. Candidate replay observations must include the sealed scenario hash returned by `sealScenario`; this binds the reporter's claim to the episode but does not prove that an external harness was honest. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
 never a pass. Library users who want the Forge to drive their harness directly can implement `ForgeAdapters`
 and call `CounterfactualImmuneForge.run()`.
 
 ## Library use
 
 ```ts
-import { adjudicateEpisode, verifyEvidenceRoot } from "shpbl-counterfactual-immune-forge";
+import { adjudicateEpisode, sealScenario, verifyEvidenceRoot } from "shpbl-counterfactual-immune-forge";
 
 const evidence = await adjudicateEpisode({
   scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
@@ -125,7 +125,7 @@ const evidence = await adjudicateEpisode({
     mutation: { id: "quarantine", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
     defense: { id: "guard", version: "1.1.0" },
     impact: { safe: true, reasons: [] },
-    replay: { reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+    replay: { scenarioId: sealScenario({ kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" }).id, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
     regression: { passed: true, failures: [] },
     fitnessScore: 0.95,
   }],
@@ -145,7 +145,7 @@ verifyEvidenceRoot(evidence);  // true
   offensive or surveillance tool. It never generates exploits and never applies changes to a live system.
 - **Input limits** are published by `describe_policy`: 256 candidates per episode, 10,000 lineage entries per
   verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
-  unknown-verdict values. Duplicate observations of one mutation/defense pair are refused rather than
+  unknown-verdict values. Duplicate observations of one mutation/defense pair and duplicate explicit mutation IDs are refused rather than
   collapsed, and requests are answered strictly in arrival order.
 
 ## Honest limitations
@@ -174,8 +174,7 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and initially merged as
 [pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169). Tenable later removed the listing
 in [pull request #187](https://github.com/tenable/cyberagents-exchange/pull/187) during its post-merge review. The
-listing is not currently published by the Exchange. Version 0.2.0 closed the promotion-soundness defect found
-in the original release; version 0.2.1 adds transport and submission-structure hardening.
+listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.2.2 closes additional baseline-qualification, scenario-binding, policy-margin, and library-ID ambiguity paths found during adversarial review.
 Past or future listing status does not imply review, approval, certification, validation, or endorsement of
 this software by Tenable.
 
