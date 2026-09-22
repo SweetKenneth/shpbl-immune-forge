@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { createHash } from "node:crypto";
 
-export const PROTOCOL = "CIF/0.2" as const;
+export const PROTOCOL = "CIF/0.3" as const;
 export const MAX_CANDIDATES_PER_EPISODE = 256 as const;
 
 export type Verdict = "PROMOTED" | "REJECTED" | "INCONCLUSIVE";
