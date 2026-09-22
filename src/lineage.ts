@@ -15,8 +15,8 @@ export interface LineageEntry {
 
 export interface LineageReport {
   protocol: "CIF-LINEAGE/0.1";
-  entries: LineageEntry[];
-  counts: Record<Verdict, number>;
+  entries: readonly LineageEntry[];
+  counts: Readonly<Record<Verdict, number>>;
   headHash: string;
   intact: boolean;
 }
@@ -45,16 +45,15 @@ export class ImmuneLineage {
   }
 
   report(): LineageReport {
-    const counts: Record<Verdict, number> = { PROMOTED: 0, REJECTED: 0, INCONCLUSIVE: 0 };
-    for (const e of this.entries) counts[e.verdict] += 1;
-    return {
+    const summary = summarizeLineage(this.entries);
+    const entries = Object.freeze(this.entries.map((e) => Object.freeze({ ...e })));
+    return Object.freeze({
       protocol: "CIF-LINEAGE/0.1",
-      // Frozen copies: an exported report cannot be edited in place and re-flagged intact.
-      entries: this.entries.map((e) => Object.freeze({ ...e })),
-      counts,
-      headHash: this.entries.length ? this.entries[this.entries.length - 1].entryHash : GENESIS,
+      entries,
+      counts: Object.freeze({ ...summary.counts }),
+      headHash: summary.headHash,
       intact: verifyLineage(this.entries),
-    };
+    });
   }
 
   reset(): void {
@@ -62,14 +61,33 @@ export class ImmuneLineage {
   }
 }
 
-export function verifyLineage(entries: readonly LineageEntry[]): boolean {
-  let previous = GENESIS;
-  for (let i = 0; i < entries.length; i += 1) {
-    const e = entries[i];
-    if (e.index !== i || e.previousEntryHash !== previous) return false;
-    const { entryHash, ...core } = e;
-    if (hash(core) !== entryHash) return false;
-    previous = entryHash;
+export function summarizeLineage(entries: readonly LineageEntry[]): {
+  counts: Record<Verdict, number>;
+  headHash: string;
+} {
+  const counts: Record<Verdict, number> = { PROMOTED: 0, REJECTED: 0, INCONCLUSIVE: 0 };
+  for (const e of entries) {
+    if (e.verdict in counts) counts[e.verdict] += 1;
   }
-  return true;
+  return {
+    counts,
+    headHash: entries.length ? entries[entries.length - 1].entryHash : GENESIS,
+  };
+}
+
+export function verifyLineage(entries: readonly LineageEntry[], expectedHeadHash?: string): boolean {
+  try {
+    let previous = GENESIS;
+    for (let i = 0; i < entries.length; i += 1) {
+      const e = entries[i];
+      if (!(e.verdict === "PROMOTED" || e.verdict === "REJECTED" || e.verdict === "INCONCLUSIVE")) return false;
+      if (e.index !== i || e.previousEntryHash !== previous) return false;
+      const { entryHash, ...core } = e;
+      if (hash(core) !== entryHash) return false;
+      previous = entryHash;
+    }
+    return expectedHeadHash === undefined || previous === expectedHeadHash;
+  } catch {
+    return false;
+  }
 }
