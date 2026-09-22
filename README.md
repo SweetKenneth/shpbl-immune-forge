@@ -43,7 +43,7 @@ necessarily uses the host process's stdin/stdout.
 6. Reject any candidate whose own replay still reports the attack succeeding. This proof gate is mandatory
    in `CIF/0.3`; a high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
-8. Require a finite fitness score strictly above the baseline plus the configured margin.
+8. Score the baseline and each candidate on the same caller-defined fitness scale, then require a finite candidate score strictly above the explicit baseline fitness plus the configured margin.
 9. Record every rejected candidate with a machine-readable reason.
 10. Return `PROMOTED` for at most the single highest-scoring candidate that cleared every gate.
 11. Seal the episode as a Merkle evidence root.
@@ -134,6 +134,7 @@ const evidence = await adjudicateEpisode({
   scenario,
   baseline: { id: "guard", version: "1.0.0" },
   baselineReplay: { scenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineFitness: 0.2,
   candidates: [{
     mutation: { id: "quarantine", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
     defense: { id: "guard", version: "1.1.0" },
@@ -168,8 +169,9 @@ verifyEvidenceRoot(evidence);  // true
   what is worth defending.
 - **A compromised evaluator** — a rigged harness or a fitness function that rewards the wrong thing — produces
   sealed evidence of a bad decision. Sealing proves integrity, not wisdom.
-- Fitness semantics are yours. The Forge only enforces "strictly better than baseline, by at least the
-  configured margin".
+- Fitness semantics are yours. The data-driven API requires an explicit `baselineFitness`, and direct adapters
+  provide `baselineFitness()`, so the baseline and candidate scores share the evaluator-defined scale. The Forge
+  enforces only "strictly better than baseline, by at least the configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
 - Hash verification without an independently retained expected root/head proves **internal consistency**, not
   historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
