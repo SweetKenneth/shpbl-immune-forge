@@ -163,9 +163,10 @@ test("a candidate that does not neutralize the sealed attack cannot be promoted 
   assert.equal(strict.verdict, "REJECTED");
   assert.equal(strict.candidates[0].rejectedReason, "ATTACK_NOT_NEUTRALIZED");
   assert.equal(strict.candidates[0].regression, undefined);
-  const relaxed = await new CounterfactualImmuneForge(a, { requireAttackNeutralized: false }).run({ scenario, baseline });
-  assert.equal(relaxed.verdict, "PROMOTED");
-  assert.equal(relaxed.policy.requireAttackNeutralized, false);
+  assert.throws(
+    () => new CounterfactualImmuneForge(a, { requireAttackNeutralized: false } as any),
+    /CIF_IMMUTABLE_PROOF_GATES/,
+  );
 });
 
 test("the gates in force are sealed with the decision", async () => {
@@ -395,4 +396,16 @@ test("sparse arrays cannot collapse to empty arrays in canonical hashing", () =>
   assert.notEqual(hash(sparse), hash([]));
   assert.equal(hash(sparse), hash([null]));
   assert.equal(hash([undefined] as any), hash([null]));
+});
+
+
+test("CIF/0.3 refuses attempts to disable mandatory attack proof gates", () => {
+  assert.throws(
+    () => new CounterfactualImmuneForge(adapters(), { requireAttackReproduction: false } as any),
+    /CIF_IMMUTABLE_PROOF_GATES/,
+  );
+  assert.throws(
+    () => new CounterfactualImmuneForge(adapters(), { requireAttackNeutralized: false } as any),
+    /CIF_IMMUTABLE_PROOF_GATES/,
+  );
 });
