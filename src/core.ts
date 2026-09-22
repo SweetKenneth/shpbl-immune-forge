@@ -389,8 +389,14 @@ export class CounterfactualImmuneForge {
     const root = episodeRoot(sealedCore);
     const sealedEvidence = immutableSnapshot<EpisodeEvidence>({ ...sealedCore, evidenceRoot: root });
     if (!this.adapters.dream) return sealedEvidence;
-    const dreamInsights = immutableSnapshot(await this.adapters.dream(sealedEvidence));
-    return immutableSnapshot({ ...sealedEvidence, dreamInsights });
+    try {
+      const dreamInsights = immutableSnapshot(await this.adapters.dream(sealedEvidence));
+      return immutableSnapshot({ ...sealedEvidence, dreamInsights });
+    } catch {
+      // DREAM is explicitly post-proof and non-authoritative. A failed or malformed exploratory
+      // hook must never suppress, rewrite, or invalidate the already-sealed decision.
+      return sealedEvidence;
+    }
   }
 }
 
