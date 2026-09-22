@@ -24,8 +24,8 @@ export const POLICY = {
   lineageProtocol: "CIF-LINEAGE/0.1",
   hash: "sha256",
   defaultRequiredFitnessMargin: 0,
-  defaultRequireAttackReproduction: true,
-  defaultRequireAttackNeutralized: true,
+  requireAttackReproduction: true,
+  requireAttackNeutralized: true,
   maxCandidatesPerEpisode: MAX_CANDIDATES_PER_EPISODE,
   maxLineageEntries: 10_000,
   maxRequestBytes: 1_048_576,
@@ -170,6 +170,11 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
     }
   });
   const policyRaw = a.policy === undefined ? {} : obj(a.policy, "policy");
+  for (const key of Object.keys(policyRaw)) {
+    if (key !== "requiredFitnessMargin") {
+      throw new InputError(`policy.${key} is not supported; CIF/0.3 proof gates are mandatory`);
+    }
+  }
   return {
     scenario: {
       kind: str(scenarioRaw.kind, "scenario.kind"),
@@ -195,22 +200,6 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
             if (margin < 0) throw new InputError("policy.requiredFitnessMargin must be non-negative");
             return margin;
           })() }),
-      ...(policyRaw.requireAttackReproduction === undefined
-        ? {}
-        : {
-            requireAttackReproduction: bool(
-              policyRaw.requireAttackReproduction,
-              "policy.requireAttackReproduction",
-            ),
-          }),
-      ...(policyRaw.requireAttackNeutralized === undefined
-        ? {}
-        : {
-            requireAttackNeutralized: bool(
-              policyRaw.requireAttackNeutralized,
-              "policy.requireAttackNeutralized",
-            ),
-          }),
     },
   };
 }
@@ -343,10 +332,9 @@ export const TOOLS = [
         },
         policy: {
           type: "object",
+          additionalProperties: false,
           properties: {
-            requiredFitnessMargin: { type: "number" },
-            requireAttackReproduction: { type: "boolean" },
-            requireAttackNeutralized: { type: "boolean" },
+            requiredFitnessMargin: { type: "number", minimum: 0 },
           },
         },
       },
