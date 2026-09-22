@@ -80,6 +80,8 @@ export interface ForgeAdapters {
     replay: ReplayResult,
     context: { scenario: Readonly<Scenario>; baselineReplay: ReplayResult },
   ): Promise<RegressionResult>;
+  /** EVOLUTION: score the baseline on the same scale used for candidate fitness. */
+  baselineFitness(baselineReplay: Readonly<ReplayResult>): number;
   /** EVOLUTION: policy-owned fitness. The Forge requires a positive delta; the adapter defines score semantics. */
   fitness(
     result: {
@@ -88,7 +90,7 @@ export interface ForgeAdapters {
       regression: RegressionResult;
       impact: ImpactResult;
     },
-    context: { baselineReplay: ReplayResult },
+    context: { baselineReplay: ReplayResult; baselineFitness: number },
   ): number;
   /** DREAM is post-proof and evidence-fed. It cannot alter the verdict or the evidence root. */
   dream?(evidence: Readonly<EpisodeEvidence>): Promise<DreamInsight[]>;
@@ -401,6 +403,10 @@ export class CounterfactualImmuneForge {
     const baseline = validateDefense(input.baseline, "baseline");
     const baselineHash = hash(baseline);
     const baselineReplay = validateReplayResult(await this.adapters.replay(scenario, baseline), scenario.id!);
+    const baselineFitness = this.adapters.baselineFitness(baselineReplay);
+    if (typeof baselineFitness !== "number" || !Number.isFinite(baselineFitness)) {
+      throw new Error("INVALID_BASELINE_FITNESS: baseline fitness must be a finite number");
+    }
     if (!baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
@@ -408,7 +414,7 @@ export class CounterfactualImmuneForge {
         baselineHash,
         baselineReplay,
         candidates: [],
-        baselineFitness: baselineReplay.securityScore,
+        baselineFitness,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_DID_NOT_REPRODUCE",
         policy,
@@ -421,7 +427,7 @@ export class CounterfactualImmuneForge {
         baselineHash,
         baselineReplay,
         candidates: [],
-        baselineFitness: baselineReplay.securityScore,
+        baselineFitness,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_ATTACK_NOT_SUCCESSFUL",
         policy,
@@ -452,7 +458,6 @@ export class CounterfactualImmuneForge {
     if (new Set(candidateIds).size !== candidateIds.length) {
       throw new Error("DUPLICATE_CANDIDATE_ID: candidate IDs must be unique within an episode");
     }
-    const baselineFitness = baselineReplay.securityScore;
     const evidence: CandidateEvidence[] = [];
     let best: { id: string; fitness: number } | undefined;
 
@@ -493,7 +498,7 @@ export class CounterfactualImmuneForge {
       }
       const scored = this.adapters.fitness(
         { candidate: c, replay: ev.replay, regression: ev.regression, impact: ev.impact },
-        { baselineReplay },
+        { baselineReplay, baselineFitness },
       );
       // A non-finite score is recorded as an unproven improvement rather than sealed: it is not a
       // number the evidence root can commit to, and it must never read as a passing gate.
