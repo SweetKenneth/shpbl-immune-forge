@@ -13,7 +13,14 @@ import {
   type RegressionResult,
   type ReplayResult,
 } from "./core.js";
-import { ImmuneLineage, summarizeLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
+import {
+  ImmuneLineage,
+  MAX_LINEAGE_ENTRIES,
+  summarizeLineage,
+  verifyLineage,
+  type LineageEntry,
+  type LineageReport,
+} from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
 export const SERVER_VERSION = "0.2.2";
@@ -27,7 +34,7 @@ export const POLICY = {
   requireAttackReproduction: true,
   requireAttackNeutralized: true,
   maxCandidatesPerEpisode: MAX_CANDIDATES_PER_EPISODE,
-  maxLineageEntries: 10_000,
+  maxLineageEntries: MAX_LINEAGE_ENTRIES,
   maxRequestBytes: 1_048_576,
   rejectionReasons: [
     "IMPACT_SCREEN_FAILED",
