@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.2 — 2026-09-22
+## 0.3.0 — 2026-09-22
 
 Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3` because replay evidence now carries sealed-scenario binding semantics and verification enforces CIF semantics in addition to distinguishing internal consistency from optional external root anchoring. `CIF/0.2` evidence is intentionally refused rather than silently reinterpreted under the stronger contract.
 
