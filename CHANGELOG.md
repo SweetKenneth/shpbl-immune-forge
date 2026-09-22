@@ -39,6 +39,9 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
 - **Direct-library verification accepted some distinct JavaScript representations with the same canonical hash.**
   Explicit `undefined` optional properties and sparse arrays could normalize to omission / `null` without
   changing the Merkle root. Verification now requires a strict JSON representation before semantic/hash checks.
+- **The advertised MCP input schema was looser than the strict runtime parser.** Nested objects now declare
+  `additionalProperties: false`, required evidence arrays match parser requirements, and non-empty string
+  constraints are advertised so schema-valid clients are not rejected for parser-only rules.
 - **A caller could recompute a Merkle root over semantically impossible CIF evidence and still obtain internal hash consistency.**
   Verification now enforces the CIF/0.3 state machine itself: mandatory policy values, baseline/verdict consistency,
   candidate gate sequencing, rejection reasons, winner selection, candidate identity uniqueness and score thresholds.
