@@ -28,23 +28,29 @@ files, sockets, processes, or environment variables.
 
 ## Protocol
 
-`CIF/0.1`, in order:
+`CIF/0.2`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
 2. Reproduce the baseline against it. If it does not reproduce → `INCONCLUSIVE`; no candidate is evaluated.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
 5. Replay the surviving candidates against the *same sealed scenario*.
-6. Apply the mandatory regression gate over protected behaviour.
-7. Require a finite fitness score strictly above the baseline plus the configured margin.
-8. Record every rejected candidate with a machine-readable reason.
-9. Promote at most the single highest-scoring candidate that cleared every gate.
-10. Seal the episode as a Merkle evidence root.
-11. Run optional DREAM exploration **after** sealing, on the sealed evidence only. It cannot change the
+6. Reject any candidate whose own replay still reports the attack succeeding (`requireAttackNeutralized`,
+   on by default). A high score cannot buy promotion for a change that did not stop the attack.
+7. Apply the mandatory regression gate over protected behaviour.
+8. Require a finite fitness score strictly above the baseline plus the configured margin.
+9. Record every rejected candidate with a machine-readable reason.
+10. Promote at most the single highest-scoring candidate that cleared every gate.
+11. Seal the episode as a Merkle evidence root.
+12. Run optional DREAM exploration **after** sealing, on the sealed evidence only. It cannot change the
     verdict or the root.
 
-Rejection reasons: `IMPACT_SCREEN_FAILED`, `SCENARIO_REPLAY_FAILED`, `REGRESSION_GATE_FAILED`,
-`NO_PROVEN_IMPROVEMENT`. Verdicts: `PROMOTED`, `REJECTED`, `INCONCLUSIVE`.
+Rejection reasons: `IMPACT_SCREEN_FAILED`, `SCENARIO_REPLAY_FAILED`, `ATTACK_NOT_NEUTRALIZED`,
+`REGRESSION_GATE_FAILED`, `NO_PROVEN_IMPROVEMENT`. Verdicts: `PROMOTED`, `REJECTED`, `INCONCLUSIVE`.
+
+The gate settings in force (`requiredFitnessMargin`, `requireAttackReproduction`,
+`requireAttackNeutralized`) are sealed inside the evidence root, so a reader can see which gates produced a
+verdict and cannot silently restate them afterwards.
 
 Full behavioural contract: [`SPEC.md`](./SPEC.md).
 
@@ -61,7 +67,7 @@ git clone https://github.com/SweetKenneth/shpbl-immune-forge.git
 cd shpbl-immune-forge
 npm install      # devDependencies only: typescript, @types/node
 npm run build    # compiles to dist/
-npm test         # 34 conformance, tamper, and boundary tests
+npm test         # 44 conformance, tamper, and boundary tests
 npm start        # starts the MCP server on stdio
 ```
 
@@ -138,7 +144,8 @@ verifyEvidenceRoot(evidence);  // true
   offensive or surveillance tool. It never generates exploits and never applies changes to a live system.
 - **Input limits** are published by `describe_policy`: 256 candidates per episode, 10,000 lineage entries per
   verification, 1 MiB per request, 32 levels of JSON nesting, and rejection of cyclic, non-finite, or
-  unknown-verdict values.
+  unknown-verdict values. Duplicate observations of one mutation/defense pair are refused rather than
+  collapsed, and requests are answered strictly in arrival order.
 
 ## Honest limitations
 
@@ -163,9 +170,10 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 
 ## Tenable status
 
-Submitted to the Tenable CyberAgents Exchange for review on September 12, 2026
-([pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169)).
-Submission does not imply review, approval, certification, validation, endorsement, or acceptance by Tenable.
+Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and merged as
+[pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169).
+Acceptance of a community listing does not imply review, approval, certification, validation, or endorsement
+of this software by Tenable.
 
 ## License
 

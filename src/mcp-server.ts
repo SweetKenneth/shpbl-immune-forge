@@ -15,7 +15,7 @@ import {
 import { ImmuneLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.2.0";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
 export const POLICY = {
@@ -24,12 +24,14 @@ export const POLICY = {
   hash: "sha256",
   defaultRequiredFitnessMargin: 0,
   defaultRequireAttackReproduction: true,
+  defaultRequireAttackNeutralized: true,
   maxCandidatesPerEpisode: 256,
   maxLineageEntries: 10_000,
   maxRequestBytes: 1_048_576,
   rejectionReasons: [
     "IMPACT_SCREEN_FAILED",
     "SCENARIO_REPLAY_FAILED",
+    "ATTACK_NOT_NEUTRALIZED",
     "REGRESSION_GATE_FAILED",
     "NO_PROVEN_IMPROVEMENT",
   ],
@@ -148,6 +150,17 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
         : { fitnessScore: num(cr.fitnessScore, `candidates[${i}].fitnessScore`) }),
     };
   });
+  const seenPair = new Set<string>();
+  const seenId = new Set<string>();
+  candidates.forEach((c, i) => {
+    const pair = `${JSON.stringify(c.mutation)}|${JSON.stringify(c.defense)}`;
+    if (seenPair.has(pair)) throw new InputError(`candidates[${i}] duplicates an earlier mutation/defense pair`);
+    seenPair.add(pair);
+    if (c.mutation.id !== undefined) {
+      if (seenId.has(c.mutation.id)) throw new InputError(`candidates[${i}].mutation.id is not unique`);
+      seenId.add(c.mutation.id);
+    }
+  });
   const policyRaw = a.policy === undefined ? {} : obj(a.policy, "policy");
   return {
     scenario: {
@@ -176,6 +189,14 @@ export function parseEpisodeInput(raw: unknown): EpisodeInput {
             requireAttackReproduction: bool(
               policyRaw.requireAttackReproduction,
               "policy.requireAttackReproduction",
+            ),
+          }),
+      ...(policyRaw.requireAttackNeutralized === undefined
+        ? {}
+        : {
+            requireAttackNeutralized: bool(
+              policyRaw.requireAttackNeutralized,
+              "policy.requireAttackNeutralized",
             ),
           }),
     },
@@ -256,12 +277,62 @@ export const TOOLS = [
           },
         },
         diagnosis: {},
-        candidates: { type: "array", items: { type: "object" } },
+        candidates: {
+          type: "array",
+          maxItems: POLICY.maxCandidatesPerEpisode,
+          items: {
+            type: "object",
+            required: ["mutation", "defense", "impact"],
+            properties: {
+              mutation: {
+                type: "object",
+                required: ["description"],
+                properties: { id: { type: "string" }, description: { type: "string" }, patch: {} },
+              },
+              defense: {
+                type: "object",
+                required: ["id", "version"],
+                properties: { id: { type: "string" }, version: { type: "string" }, state: {} },
+              },
+              impact: {
+                type: "object",
+                required: ["safe"],
+                properties: {
+                  safe: { type: "boolean" },
+                  reasons: { type: "array", items: { type: "string" } },
+                  riskScore: { type: "number" },
+                },
+              },
+              replay: {
+                type: "object",
+                required: ["reproduced", "attackSucceeded", "securityScore"],
+                properties: {
+                  reproduced: { type: "boolean" },
+                  attackSucceeded: { type: "boolean" },
+                  securityScore: { type: "number" },
+                  state: {},
+                  trace: {},
+                },
+              },
+              regression: {
+                type: "object",
+                required: ["passed"],
+                properties: {
+                  passed: { type: "boolean" },
+                  failures: { type: "array", items: { type: "string" } },
+                  score: { type: "number" },
+                },
+              },
+              fitnessScore: { type: "number" },
+            },
+          },
+        },
         policy: {
           type: "object",
           properties: {
             requiredFitnessMargin: { type: "number" },
             requireAttackReproduction: { type: "boolean" },
+            requireAttackNeutralized: { type: "boolean" },
           },
         },
       },
@@ -343,7 +414,12 @@ export function createHandler(lineage: ImmuneLineage = new ImmuneLineage()) {
           return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
       }
     } catch (error) {
-      const message = error instanceof InputError ? error.message : "invalid request";
+      const message =
+        error instanceof InputError
+          ? error.message
+          : error instanceof Error && /^[A-Z_]+:/.test(error.message)
+            ? error.message
+            : "invalid request";
       return { content: [{ type: "text", text: `Rejected: ${message}` }], isError: true };
     }
   };
@@ -388,37 +464,53 @@ export async function handleRpc(
   }
 }
 
-export function startStdioServer(): void {
-  const callTool = createHandler();
+/**
+ * Frames newline-delimited JSON-RPC and answers strictly in arrival order. Requests are queued
+ * rather than raced, so a slow adjudication cannot reorder replies or interleave lineage appends.
+ */
+export function createLineProcessor(
+  callTool: ReturnType<typeof createHandler>,
+  write: (line: string) => void,
+) {
   let buffer = "";
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (chunk: string) => {
-    buffer += chunk;
-    if (buffer.length > POLICY.maxRequestBytes) {
-      buffer = "";
-      process.stdout.write(
-        JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } }) + "\n",
-      );
-      return;
-    }
-    let index = buffer.indexOf("\n");
-    while (index !== -1) {
-      const line = buffer.slice(0, index).trim();
-      buffer = buffer.slice(index + 1);
-      if (line) {
-        void (async () => {
-          let response: Record<string, unknown> | undefined;
-          try {
-            response = await handleRpc(JSON.parse(line) as RpcRequest, callTool);
-          } catch {
-            response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
-          }
-          if (response) process.stdout.write(JSON.stringify(response) + "\n");
-        })();
+  let chain: Promise<void> = Promise.resolve();
+  const emit = (value: unknown) => write(JSON.stringify(value) + "\n");
+  return {
+    push(chunk: string): void {
+      buffer += chunk;
+      if (buffer.length > POLICY.maxRequestBytes) {
+        buffer = "";
+        emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+        return;
       }
-      index = buffer.indexOf("\n");
-    }
-  });
+      let index = buffer.indexOf("\n");
+      while (index !== -1) {
+        const line = buffer.slice(0, index).trim();
+        buffer = buffer.slice(index + 1);
+        if (line) {
+          chain = chain.then(async () => {
+            let response: Record<string, unknown> | undefined;
+            try {
+              response = await handleRpc(JSON.parse(line) as RpcRequest, callTool);
+            } catch {
+              response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
+            }
+            if (response) emit(response);
+          });
+        }
+        index = buffer.indexOf("\n");
+      }
+    },
+    drain(): Promise<void> {
+      return chain;
+    },
+  };
+}
+
+export function startStdioServer(): void {
+  const processor = createLineProcessor(createHandler(), (line) => process.stdout.write(line));
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk: string) => processor.push(chunk));
 }
 
 const entry = process.argv[1] ?? "";

@@ -1,10 +1,12 @@
 {
   "name": "shpbl-counterfactual-immune-forge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Proof-gated defense evolution: adjudicate candidate defensive mutations against a sealed attack scenario and seal every decision as verifiable evidence. MCP server plus TypeScript library.",
   "license": "MIT",
   "author": "Kenneth E. Sweet Jr. (SHPBL)",
   "homepage": "https://shpbl.com/tenable-submissions",
+  "repository": { "type": "git", "url": "git+https://github.com/SweetKenneth/shpbl-immune-forge.git" },
+  "bugs": { "url": "https://github.com/SweetKenneth/shpbl-immune-forge/issues" },
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

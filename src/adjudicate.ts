@@ -57,7 +57,15 @@ const MISSING_REGRESSION: RegressionResult = {
  */
 export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvidence> {
   const observations = new Map<string, CandidateObservation>();
-  for (const o of input.candidates) observations.set(candidateKey(o), o);
+  for (const o of input.candidates) {
+    const key = candidateKey(o);
+    // Two observations of the same mutation-and-defense pair are ambiguous evidence: one would
+    // silently overwrite the other and both would be adjudicated from the survivor's numbers.
+    if (observations.has(key)) {
+      throw new Error("DUPLICATE_CANDIDATE_OBSERVATION: each mutation/defense pair may be supplied once");
+    }
+    observations.set(key, o);
+  }
 
   let inFlight: CandidateObservation | undefined;
 

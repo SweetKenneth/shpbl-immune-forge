@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHandler, handleRpc, TOOLS, POLICY } from "../src/mcp-server.js";
+import { createHandler, createLineProcessor, handleRpc, SERVER_VERSION, TOOLS, POLICY } from "../src/mcp-server.js";
 import { ImmuneLineage } from "../src/lineage.js";
 
 const episode = {
@@ -64,11 +64,54 @@ test("adjudication through the tool interface promotes, records lineage and veri
   assert.equal(parse(await call("export_immune_lineage_report", {})).entries.length, 0);
 });
 
+test("duplicate candidate observations are refused as ambiguous evidence", async () => {
+  const call = createHandler();
+  const duplicated = await call("adjudicate_defensive_mutation", {
+    ...episode,
+    candidates: [episode.candidates[0], episode.candidates[0]],
+  });
+  assert.equal(duplicated.isError, true);
+  assert.match(duplicated.content[0].text, /duplicates an earlier mutation\/defense pair/);
+  const sameId = await call("adjudicate_defensive_mutation", {
+    ...episode,
+    candidates: [
+      episode.candidates[0],
+      { ...episode.candidates[0], defense: { id: "guard", version: "1.2.0" } },
+    ],
+  });
+  assert.equal(sameId.isError, true);
+  assert.match(sameId.content[0].text, /mutation\.id is not unique/);
+});
+
+test("queued requests are answered in arrival order", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "adjudicate_defensive_mutation", arguments: episode } }) + "\n");
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\n{"); // trailing partial line
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }).slice(1) + "\n");
+  await processor.drain();
+  assert.deepEqual(written.map((line) => JSON.parse(line).id), [1, 2, 3]);
+  const first = JSON.parse(written[0]);
+  assert.equal(JSON.parse(first.result.content[0].text).evidence.verdict, "PROMOTED");
+});
+
+test("an oversized frame is refused without desynchronising the reader", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push("x".repeat(POLICY.maxRequestBytes + 1));
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 7, method: "ping" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32600);
+  assert.equal(JSON.parse(written[1]).id, 7);
+});
+
 test("describe_policy publishes limits and the no-side-effect declaration", async () => {
   const policy = parse(await createHandler()("describe_policy", {}));
   assert.equal(policy.protocol, POLICY.protocol);
   assert.equal(policy.hash, "sha256");
   assert.ok(policy.sideEffects.startsWith("none"));
+  assert.equal(policy.defaultRequireAttackNeutralized, true);
+  assert.ok(policy.rejectionReasons.includes("ATTACK_NOT_NEUTRALIZED"));
   assert.equal(policy.tools.length, TOOLS.length);
 });
 
@@ -152,6 +195,6 @@ test("candidates that share a defense version are judged on their own replay", a
   );
   const weak = out.evidence.candidates.find((c: any) => c.candidateId === "cand-weak");
   assert.equal(weak.replay.attackSucceeded, true);
-  assert.equal(weak.rejectedReason, "NO_PROVEN_IMPROVEMENT");
+  assert.equal(weak.rejectedReason, "ATTACK_NOT_NEUTRALIZED");
   assert.equal(out.evidence.winnerId, "cand-a");
 });

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CounterfactualImmuneForge,
+  canonical,
   hash,
   merkleRoot,
   sealScenario,
@@ -151,4 +152,45 @@ test("merkle tree shapes are domain separated", () => {
   // An odd tail must not collide with the same leaf genuinely paired with itself.
   assert.notEqual(merkleRoot(["a", "b", "c"]), merkleRoot(["a", "b", "c", "c"]));
   assert.notEqual(merkleRoot(["a", "b"]), merkleRoot(["a", "b", "b"]));
+});
+
+test("a candidate that does not neutralize the sealed attack cannot be promoted on score", async () => {
+  const a = adapters();
+  a.replay = async (_s, d) => ({ reproduced: true, attackSucceeded: true, securityScore: d.id === "base" ? 0.2 : 0.99 });
+  a.fitness = () => 0.99;
+  const strict = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(strict.verdict, "REJECTED");
+  assert.equal(strict.candidates[0].rejectedReason, "ATTACK_NOT_NEUTRALIZED");
+  assert.equal(strict.candidates[0].regression, undefined);
+  const relaxed = await new CounterfactualImmuneForge(a, { requireAttackNeutralized: false }).run({ scenario, baseline });
+  assert.equal(relaxed.verdict, "PROMOTED");
+  assert.equal(relaxed.policy.requireAttackNeutralized, false);
+});
+
+test("the gates in force are sealed with the decision", async () => {
+  const r = await new CounterfactualImmuneForge(adapters(), { requiredFitnessMargin: 0.1 }).run({ scenario, baseline });
+  assert.deepEqual(r.policy, {
+    requiredFitnessMargin: 0.1,
+    requireAttackReproduction: true,
+    requireAttackNeutralized: true,
+  });
+  assert.equal(verifyEvidenceRoot(r), true);
+  assert.equal(verifyEvidenceRoot({ ...r, policy: { ...r.policy, requiredFitnessMargin: 0 } }), false);
+  const { policy: _dropped, ...withoutPolicy } = r;
+  assert.equal(verifyEvidenceRoot(withoutPolicy as typeof r), false);
+});
+
+test("non-finite numbers cannot be sealed", () => {
+  assert.throws(() => canonical(Number.NaN), /CIF_NON_FINITE_NUMBER/);
+  assert.throws(() => hash({ score: Number.POSITIVE_INFINITY }), /CIF_NON_FINITE_NUMBER/);
+  assert.equal(hash(0), hash(0));
+});
+
+test("a non-finite fitness score is never sealed into evidence", async () => {
+  const a = adapters();
+  a.fitness = () => Number.NaN;
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.candidates[0].rejectedReason, "NO_PROVEN_IMPROVEMENT");
+  assert.equal(r.candidates[0].fitness, undefined);
+  assert.equal(verifyEvidenceRoot(r), true);
 });

@@ -1,8 +1,8 @@
-// Counterfactual Immune Forge — CIF/0.1 proof-gated defense promotion engine.
+// Counterfactual Immune Forge — CIF/0.2 proof-gated defense promotion engine.
 // SPDX-License-Identifier: MIT
 import { createHash } from "node:crypto";
 
-export const PROTOCOL = "CIF/0.1" as const;
+export const PROTOCOL = "CIF/0.2" as const;
 
 export type Verdict = "PROMOTED" | "REJECTED" | "INCONCLUSIVE";
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -85,6 +85,7 @@ export interface ForgeAdapters {
 export type RejectionReason =
   | "IMPACT_SCREEN_FAILED"
   | "SCENARIO_REPLAY_FAILED"
+  | "ATTACK_NOT_NEUTRALIZED"
   | "REGRESSION_GATE_FAILED"
   | "NO_PROVEN_IMPROVEMENT";
 
@@ -98,6 +99,14 @@ export interface CandidateEvidence {
   fitness?: number;
   rejectedReason?: RejectionReason;
 }
+
+/** The gate settings actually in force for an episode. Sealed with the decision. */
+export interface EffectivePolicy {
+  requiredFitnessMargin: number;
+  requireAttackReproduction: boolean;
+  requireAttackNeutralized: boolean;
+}
+
 export interface EpisodeEvidence {
   protocol: typeof PROTOCOL;
   scenarioId: string;
@@ -109,6 +118,8 @@ export interface EpisodeEvidence {
   winnerId?: string;
   verdict: Verdict;
   reason: string;
+  /** Covered by the evidence root: a reader can see which gates the verdict was produced under. */
+  policy: EffectivePolicy;
   dreamInsights?: DreamInsight[];
   evidenceRoot: string;
 }
@@ -118,10 +129,29 @@ export interface ForgePolicy {
   requiredFitnessMargin?: number;
   /** When true (default) an episode whose baseline does not reproduce is INCONCLUSIVE. */
   requireAttackReproduction?: boolean;
+  /**
+   * When true (default) a candidate whose own replay still reports the attack succeeding is
+   * rejected as ATTACK_NOT_NEUTRALIZED, whatever fitness the caller scored it. Set false only
+   * when your fitness semantics deliberately reward partial mitigation.
+   */
+  requireAttackNeutralized?: boolean;
+}
+
+export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
+  return {
+    requiredFitnessMargin: policy.requiredFitnessMargin ?? 0,
+    requireAttackReproduction: policy.requireAttackReproduction ?? true,
+    requireAttackNeutralized: policy.requireAttackNeutralized ?? true,
+  };
 }
 
 export function canonical(value: unknown): string {
   if (value === undefined) return "null";
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    // JSON.stringify would silently turn NaN/Infinity into "null" and let two different
+    // observations share one hash. A sealing function must never accept that.
+    throw new TypeError("CIF_NON_FINITE_NUMBER: non-finite numbers cannot be sealed");
+  }
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   const obj = value as Record<string, unknown>;
@@ -177,22 +207,27 @@ function episodeRoot(e: EpisodeCore): string {
     hash(e.winnerId ?? null),
     hash(e.verdict),
     hash(e.reason),
+    hash(e.policy),
   ];
   return merkleRoot(leaves);
 }
 
 export class CounterfactualImmuneForge {
+  private readonly effective: EffectivePolicy;
+
   constructor(
     private readonly adapters: ForgeAdapters,
-    private readonly policy: ForgePolicy = {},
-  ) {}
+    policy: ForgePolicy = {},
+  ) {
+    this.effective = effectivePolicy(policy);
+  }
 
   async run(input: { scenario: Scenario; baseline: Defense }): Promise<EpisodeEvidence> {
+    const policy = this.effective;
     const scenario = sealScenario(input.scenario);
     const baselineHash = hash(input.baseline);
     const baselineReplay = await this.adapters.replay(scenario, Object.freeze({ ...input.baseline }));
-    const requireReproduction = this.policy.requireAttackReproduction ?? true;
-    if (requireReproduction && !baselineReplay.reproduced) {
+    if (policy.requireAttackReproduction && !baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
         scenarioId: scenario.id!,
@@ -202,6 +237,7 @@ export class CounterfactualImmuneForge {
         baselineFitness: baselineReplay.securityScore,
         verdict: "INCONCLUSIVE",
         reason: "BASELINE_DID_NOT_REPRODUCE",
+        policy,
       });
     }
 
@@ -241,24 +277,32 @@ export class CounterfactualImmuneForge {
         evidence.push(ev);
         continue;
       }
+      // A candidate that still lets the sealed attack succeed cannot be promoted on score alone.
+      if (policy.requireAttackNeutralized && ev.replay.attackSucceeded) {
+        ev.rejectedReason = "ATTACK_NOT_NEUTRALIZED";
+        evidence.push(ev);
+        continue;
+      }
       ev.regression = await this.adapters.regress(c, ev.replay, { scenario, baselineReplay });
       if (!ev.regression.passed) {
         ev.rejectedReason = "REGRESSION_GATE_FAILED";
         evidence.push(ev);
         continue;
       }
-      ev.fitness = this.adapters.fitness(
+      const scored = this.adapters.fitness(
         { replay: ev.replay, regression: ev.regression, impact: ev.impact },
         { baselineReplay },
       );
-      const margin = this.policy.requiredFitnessMargin ?? 0;
-      if (!(Number.isFinite(ev.fitness) && ev.fitness > baselineFitness + margin)) {
+      // A non-finite score is recorded as an unproven improvement rather than sealed: it is not a
+      // number the evidence root can commit to, and it must never read as a passing gate.
+      if (Number.isFinite(scored)) ev.fitness = scored;
+      if (!(Number.isFinite(scored) && scored > baselineFitness + policy.requiredFitnessMargin)) {
         ev.rejectedReason = "NO_PROVEN_IMPROVEMENT";
         evidence.push(ev);
         continue;
       }
       evidence.push(ev);
-      if (!best || ev.fitness > best.fitness) best = { id: candidateId, fitness: ev.fitness };
+      if (!best || scored > best.fitness) best = { id: candidateId, fitness: scored };
     }
 
     const core: EpisodeCore = best
@@ -273,6 +317,7 @@ export class CounterfactualImmuneForge {
           winnerId: best.id,
           verdict: "PROMOTED",
           reason: "PROOF_GATES_PASSED",
+          policy,
         }
       : {
           protocol: PROTOCOL,
@@ -284,6 +329,7 @@ export class CounterfactualImmuneForge {
           baselineFitness,
           verdict: "REJECTED",
           reason: "NO_CANDIDATE_CLEARED_PROOF_GATES",
+          policy,
         };
     return this.finish(core);
   }
@@ -301,5 +347,12 @@ export class CounterfactualImmuneForge {
 
 export function verifyEvidenceRoot(e: EpisodeEvidence): boolean {
   const { evidenceRoot: root, dreamInsights: _ignored, ...core } = e;
-  return episodeRoot(core) === root;
+  // A missing or malformed policy block is a failed verification, never a pass: the gates the
+  // verdict was produced under are part of what the root covers.
+  if (!core.policy || typeof core.policy !== "object") return false;
+  try {
+    return episodeRoot(core) === root;
+  } catch {
+    return false;
+  }
 }

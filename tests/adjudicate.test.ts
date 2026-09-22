@@ -82,3 +82,25 @@ test("lineage links episodes and detects edits", async () => {
   assert.equal(lineage.report().entries.length, 0);
   assert.equal(verifyLineage(report.entries), true);
 });
+
+test("a candidate that still loses to the attack is rejected before the regression gate", async () => {
+  const r = await adjudicateEpisode({
+    ...base,
+    candidates: [
+      {
+        ...base.candidates[0],
+        replay: { reproduced: true, attackSucceeded: true, securityScore: 0.99 },
+        fitnessScore: 0.99,
+      },
+    ],
+  });
+  assert.equal(r.verdict, "REJECTED");
+  assert.equal(r.candidates[0].rejectedReason, "ATTACK_NOT_NEUTRALIZED");
+});
+
+test("duplicate observations of one mutation/defense pair are refused", async () => {
+  await assert.rejects(
+    () => adjudicateEpisode({ ...base, candidates: [base.candidates[0], base.candidates[0]] }),
+    /DUPLICATE_CANDIDATE_OBSERVATION/,
+  );
+});

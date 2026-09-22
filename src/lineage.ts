@@ -49,7 +49,8 @@ export class ImmuneLineage {
     for (const e of this.entries) counts[e.verdict] += 1;
     return {
       protocol: "CIF-LINEAGE/0.1",
-      entries: [...this.entries],
+      // Frozen copies: an exported report cannot be edited in place and re-flagged intact.
+      entries: this.entries.map((e) => Object.freeze({ ...e })),
       counts,
       headHash: this.entries.length ? this.entries[this.entries.length - 1].entryHash : GENESIS,
       intact: verifyLineage(this.entries),

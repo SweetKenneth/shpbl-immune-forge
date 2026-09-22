@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const srcDir = new URL("../../src/", import.meta.url).pathname;
+const srcDir = fileURLToPath(new URL("../../src/", import.meta.url));
 const sources = readdirSync(srcDir).filter((f) => f.endsWith(".ts"));
 
 test("the implementation performs no filesystem, network, process or environment access", () => {
@@ -20,7 +21,7 @@ test("the implementation performs no filesystem, network, process or environment
 });
 
 test("only node:crypto is imported from the platform and no dependency is declared", () => {
-  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url).pathname, "utf8"));
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"));
   assert.equal(pkg.dependencies, undefined);
   assert.equal(pkg.license, "MIT");
   const imports = new Set<string>();
@@ -32,12 +33,20 @@ test("only node:crypto is imported from the platform and no dependency is declar
 });
 
 test("documentation states the honest limits and claims no Tenable endorsement", () => {
-  const readme = readFileSync(new URL("../../README.md", import.meta.url).pathname, "utf8").replace(/\s+/g, " ");
+  const readme = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8").replace(/\s+/g, " ");
   for (const phrase of [
-    "does not imply review, approval, certification, validation, endorsement, or acceptance by Tenable",
+    "does not imply review, approval, certification, validation, or endorsement",
     "not an autonomous security oracle",
     "A compromised evaluator",
   ]) {
     assert.ok(readme.includes(phrase), `README must state: ${phrase}`);
   }
+});
+
+test("the advertised server version matches the published package version", async () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"));
+  const { SERVER_VERSION, SERVER_NAME } = await import("../src/mcp-server.js");
+  assert.equal(SERVER_VERSION, pkg.version);
+  assert.equal(SERVER_NAME, pkg.name);
+  assert.equal(pkg.repository.url.includes("shpbl-immune-forge"), true);
 });
