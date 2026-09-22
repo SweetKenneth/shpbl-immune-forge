@@ -57,7 +57,14 @@ const MISSING_REGRESSION: RegressionResult = {
  */
 export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvidence> {
   const observations = new Map<string, CandidateObservation>();
+  const mutationIds = new Set<string>();
   for (const o of input.candidates) {
+    if (o.mutation.id !== undefined) {
+      if (mutationIds.has(o.mutation.id)) {
+        throw new Error("DUPLICATE_MUTATION_ID: each explicit mutation.id must be unique within an episode");
+      }
+      mutationIds.add(o.mutation.id);
+    }
     const key = candidateKey(o);
     // Two observations of the same mutation-and-defense pair are ambiguous evidence: one would
     // silently overwrite the other and both would be adjudicated from the survivor's numbers.
@@ -73,8 +80,12 @@ export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvi
     // The baseline replay happens before any candidate is screened, so an unset in-flight
     // candidate identifies the baseline. Once screening fixes a candidate, that candidate's own
     // recorded replay is used — never another candidate that happens to share a defense version.
-    replay: async (_scenario, defense) => {
-      if (inFlight) return inFlight.replay ?? MISSING_REPLAY;
+    replay: async (sealedScenario, defense) => {
+      if (inFlight) {
+        const observed = inFlight.replay ?? MISSING_REPLAY;
+        if (observed.scenarioId !== sealedScenario.id) return MISSING_REPLAY;
+        return observed;
+      }
       if (defense.id === input.baseline.id && defense.version === input.baseline.version) {
         return input.baselineReplay;
       }
