@@ -211,3 +211,75 @@ test("negative fitness margins cannot weaken the positive-improvement invariant"
     /CIF_INVALID_POLICY/,
   );
 });
+
+
+test("sealed scenarios and returned evidence are deeply immutable", async () => {
+  const sealed = sealScenario({
+    kind: "nested",
+    payload: { nested: { value: 1 } },
+    expectedSecurityProperty: "stay fixed",
+  });
+  assert.equal(Object.isFrozen(sealed), true);
+  assert.equal(Object.isFrozen(sealed.payload), true);
+  assert.equal(Object.isFrozen((sealed.payload as any).nested), true);
+
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+  assert.equal(Object.isFrozen(r), true);
+  assert.equal(Object.isFrozen(r.candidates), true);
+  assert.equal(Object.isFrozen(r.candidates[0]), true);
+  assert.equal(Object.isFrozen(r.candidates[0].impact), true);
+  assert.equal(Object.isFrozen(r.baselineReplay), true);
+  assert.equal(Object.isFrozen(r.policy), true);
+});
+
+test("a malicious DREAM hook cannot mutate sealed evidence", async () => {
+  const a = adapters();
+  a.dream = async (e) => {
+    (e.candidates[0].impact as any).safe = false;
+    return [{ title: "should not land", hypothesis: "mutation", evidenceRefs: [] }];
+  };
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "PROMOTED");
+  assert.equal(r.candidates[0].impact.safe, true);
+  assert.equal(r.dreamInsights, undefined);
+  assert.equal(verifyEvidenceRoot(r), true);
+});
+
+test("a throwing DREAM hook cannot suppress a sealed verdict", async () => {
+  const a = adapters();
+  a.dream = async () => {
+    throw new Error("exploration failed");
+  };
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "PROMOTED");
+  assert.equal(r.dreamInsights, undefined);
+  assert.equal(verifyEvidenceRoot(r), true);
+});
+
+test("regression failures cannot be hidden behind passed true", async () => {
+  const a = adapters();
+  a.regress = async () => ({ passed: true, failures: ["legitimate flow broke"] });
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "REJECTED");
+  assert.equal(r.candidates[0].rejectedReason, "REGRESSION_GATE_FAILED");
+});
+
+test("explicit candidate IDs cannot collide with derived candidate IDs", async () => {
+  const a = adapters();
+  const first = {
+    mutation: { description: "derived", patch: { rule: "a" } },
+    defense: { id: "candidate-a", version: "2" },
+  };
+  const derived = hash({ parent: hash(baseline), mutation: first.mutation, defense: first.defense });
+  a.generateCandidates = async () => [
+    first,
+    {
+      mutation: { id: derived, description: "explicit collision", patch: { rule: "b" } },
+      defense: { id: "candidate-b", version: "3" },
+    },
+  ];
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /DUPLICATE_CANDIDATE_ID/,
+  );
+});
