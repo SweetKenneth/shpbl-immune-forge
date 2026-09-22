@@ -527,6 +527,11 @@ export function createLineProcessor(
   let buffer = "";
   let chain: Promise<void> = Promise.resolve();
   const emit = (value: unknown) => write(JSON.stringify(value) + "\n");
+  const queueResponse = (value: unknown): void => {
+    chain = chain.then(async () => {
+      emit(value);
+    });
+  };
   const queue = (line: string): void => {
     chain = chain.then(async () => {
       let response: Record<string, unknown> | undefined;
@@ -547,7 +552,7 @@ export function createLineProcessor(
         buffer = buffer.slice(index + 1);
         if (line) {
           if (Buffer.byteLength(line, "utf8") > POLICY.maxRequestBytes) {
-            emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+            queueResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
           } else {
             queue(line);
           }
@@ -556,7 +561,7 @@ export function createLineProcessor(
       }
       if (Buffer.byteLength(buffer, "utf8") > POLICY.maxRequestBytes) {
         buffer = "";
-        emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+        queueResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
       }
     },
     drain(): Promise<void> {
