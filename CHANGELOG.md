@@ -2,11 +2,11 @@
 
 ## 0.2.2 — 2026-09-22
 
-Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3` because replay evidence now carries sealed-scenario binding semantics and the verifier contract distinguishes internal consistency from optional external root anchoring. `CIF/0.2` evidence is intentionally refused rather than silently reinterpreted under the stronger contract.
+Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3` because replay evidence now carries sealed-scenario binding semantics and verification enforces CIF semantics in addition to distinguishing internal consistency from optional external root anchoring. `CIF/0.2` evidence is intentionally refused rather than silently reinterpreted under the stronger contract.
 
 ### Fixed
 
-- **A reproduced baseline could enter mutation evaluation even when the attack had not succeeded.** With the default reproduction gate, the baseline must now both reproduce the event and report `attackSucceeded: true`; otherwise the episode is `INCONCLUSIVE` with `BASELINE_ATTACK_NOT_SUCCESSFUL`.
+- **A reproduced baseline could enter mutation evaluation even when the attack had not succeeded.** With CIF/0.3's mandatory reproduction gate, the baseline must now both reproduce the event and report `attackSucceeded: true`; otherwise the episode is `INCONCLUSIVE` with `BASELINE_ATTACK_NOT_SUCCESSFUL`.
 - **Data-driven candidate replay observations were associated with an episode but not cryptographically bound to its sealed scenario.** Candidate replays must now carry the sealed `scenarioId`; missing or mismatched bindings fail the replay gate. This binds the reporter's claim to the episode without claiming to prove an external harness was truthful.
 - **Negative fitness margins could weaken the positive-improvement gate.** `requiredFitnessMargin` is now required to be finite and non-negative at both library and MCP boundaries.
 - **Duplicate explicit mutation IDs were only rejected by the MCP parser.** The library adjudication API now enforces the same uniqueness invariant, preventing ambiguous `winnerId` values.
@@ -35,6 +35,15 @@ Adversarial promotion-soundness hardening. Evidence protocol bumped to `CIF/0.3`
   trimming.** Raw frame bytes are now measured before whitespace normalization.
 - **Unknown direct-library policy keys were silently ignored.** CIF/0.3 now rejects unsupported policy keys so a
   typo cannot make a caller believe a stricter gate was applied when the engine actually used defaults.
+- **A caller could recompute a Merkle root over semantically impossible CIF evidence and still obtain internal hash consistency.**
+  Verification now enforces the CIF/0.3 state machine itself: mandatory policy values, baseline/verdict consistency,
+  candidate gate sequencing, rejection reasons, winner selection, candidate identity uniqueness and score thresholds.
+- **Transport-level oversized-frame errors could overtake an earlier slow queued response.** All stdio responses,
+  including frame errors, now share one arrival-order queue; malformed JSON-RPC IDs and tool-call parameters also fail closed.
+- **The MCP handshake accepted malformed initialize requests and advertised an older revision.** The stdio server now
+  validates required initialize fields and targets the 2025-11-25 initialize-based MCP revision.
+- **The secret-scan workflow could fail before scanning on pull requests.** Gitleaks now receives the repository's
+  automatically issued read-scoped GitHub token required by the action's PR mode.
 
 ### Added
 
