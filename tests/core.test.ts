@@ -494,6 +494,7 @@ test("baseline and candidate fitness use the same adapter-defined scale", async 
   assert.equal(r.baselineFitness, 10);
   assert.equal(r.verdict, "REJECTED");
   assert.equal(r.candidates[0].rejectedReason, "NO_PROVEN_IMPROVEMENT");
+  assert.equal(verifyEvidenceRoot(r), true);
 });
 
 test("non-finite baseline fitness is refused before candidate evaluation", async () => {
