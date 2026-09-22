@@ -88,6 +88,47 @@ export function summarizeLineage(entries: readonly LineageEntry[]): {
   };
 }
 
+
+function lineageEntrySemanticsAreValid(entry: LineageEntry): boolean {
+  const hex64 = (value: unknown): value is string =>
+    typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  const keys = Object.keys(entry as unknown as Record<string, unknown>).sort();
+  const allowed = [
+    "entryHash",
+    "episodeRoot",
+    "index",
+    "previousEntryHash",
+    "reason",
+    "scenarioId",
+    "verdict",
+    "winnerId",
+  ];
+  if (keys.some((key) => !allowed.includes(key))) return false;
+  if (
+    !Number.isInteger(entry.index) ||
+    entry.index < 0 ||
+    !hex64(entry.scenarioId) ||
+    !hex64(entry.episodeRoot) ||
+    !hex64(entry.previousEntryHash) ||
+    !hex64(entry.entryHash)
+  ) {
+    return false;
+  }
+  if (entry.verdict === "PROMOTED") {
+    return entry.reason === "PROOF_GATES_PASSED" && typeof entry.winnerId === "string" && entry.winnerId.length > 0;
+  }
+  if (entry.verdict === "REJECTED") {
+    return entry.reason === "NO_CANDIDATE_CLEARED_PROOF_GATES" && entry.winnerId === undefined;
+  }
+  if (entry.verdict === "INCONCLUSIVE") {
+    return (
+      (entry.reason === "BASELINE_DID_NOT_REPRODUCE" || entry.reason === "BASELINE_ATTACK_NOT_SUCCESSFUL") &&
+      entry.winnerId === undefined
+    );
+  }
+  return false;
+}
+
 export function verifyLineage(entries: readonly LineageEntry[], expectedHeadHash?: string): boolean {
   try {
     const allowed = new Set([
