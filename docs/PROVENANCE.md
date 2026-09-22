@@ -19,8 +19,9 @@ scoring internals, or catalog material. The public bytes were written for releas
 the private library.
 
 ## Dependencies
-Zero runtime dependencies. Platform imports limited to `node:crypto`. No filesystem, network, process, or
-environment access anywhere in `src/` — asserted by `tests/disclosure.test.ts`.
+Zero runtime dependencies. Platform imports limited to `node:crypto`. No application-level filesystem or network
+access, subprocess spawning, or environment-variable reads anywhere in `src/`; the stdio server necessarily uses
+stdin/stdout — asserted by `tests/disclosure.test.ts`.
 
 ## Verification
 - `npm test` — build plus conformance, adversarial, boundary and MCP handshake tests.
