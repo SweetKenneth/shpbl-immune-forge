@@ -33,14 +33,14 @@ files, sockets, processes, or environment variables.
 `CIF/0.3`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
-2. Reproduce the baseline against it. Data-driven baseline evidence must carry the sealed scenario hash. With
-   the default reproduction gate, the baseline must both reproduce **and report the attack succeeding**;
-   otherwise → `INCONCLUSIVE` and no candidate is evaluated.
+2. Reproduce the baseline against it. Data-driven baseline evidence must carry the sealed scenario hash. The
+   baseline must both reproduce **and report the attack succeeding**; otherwise → `INCONCLUSIVE` and no candidate
+   is evaluated. This proof gate is mandatory in `CIF/0.3`.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
 5. Require each survivor's supplied replay observation to carry the hash of the *same sealed scenario*. A missing or mismatched binding fails the replay gate.
-6. Reject any candidate whose own replay still reports the attack succeeding (`requireAttackNeutralized`,
-   on by default). A high score cannot buy promotion for a change that did not stop the attack.
+6. Reject any candidate whose own replay still reports the attack succeeding. This proof gate is mandatory
+   in `CIF/0.3`; a high score cannot buy promotion for a change that did not stop the attack.
 7. Apply the mandatory regression gate over protected behaviour.
 8. Require a finite fitness score strictly above the baseline plus the configured margin.
 9. Record every rejected candidate with a machine-readable reason.
@@ -52,9 +52,9 @@ files, sockets, processes, or environment variables.
 Rejection reasons: `IMPACT_SCREEN_FAILED`, `SCENARIO_REPLAY_FAILED`, `ATTACK_NOT_NEUTRALIZED`,
 `REGRESSION_GATE_FAILED`, `NO_PROVEN_IMPROVEMENT`. Verdicts: `PROMOTED`, `REJECTED`, `INCONCLUSIVE`.
 
-The gate settings in force (`requiredFitnessMargin`, `requireAttackReproduction`,
-`requireAttackNeutralized`) are sealed inside the evidence root, so a reader can see which gates produced a
-verdict and cannot silently restate them afterwards.
+The effective policy is sealed inside the evidence root. `requiredFitnessMargin` is configurable and
+non-negative; `requireAttackReproduction` and `requireAttackNeutralized` are recorded as `true` and cannot be
+disabled in `CIF/0.3`, so a reader can see exactly which invariants produced the verdict.
 
 Full behavioural contract: [`SPEC.md`](./SPEC.md).
 
