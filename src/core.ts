@@ -144,7 +144,10 @@ export interface ForgePolicy {
 }
 
 export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
-  const raw = policy as ForgePolicy & {
+  if (typeof policy !== "object" || policy === null || Array.isArray(policy)) {
+    throw new TypeError("CIF_INVALID_POLICY: policy must be an object");
+  }
+  const raw = policy as ForgePolicy & Record<string, unknown> & {
     requireAttackReproduction?: unknown;
     requireAttackNeutralized?: unknown;
   };
@@ -152,6 +155,11 @@ export function effectivePolicy(policy: ForgePolicy = {}): EffectivePolicy {
     throw new TypeError(
       "CIF_IMMUTABLE_PROOF_GATES: baseline reproduction and candidate neutralization are mandatory in CIF/0.3",
     );
+  }
+  for (const key of Object.keys(raw)) {
+    if (key !== "requiredFitnessMargin") {
+      throw new TypeError(`CIF_INVALID_POLICY: unsupported policy key ${key}`);
+    }
   }
   const requiredFitnessMargin = policy.requiredFitnessMargin ?? 0;
   if (!Number.isFinite(requiredFitnessMargin) || requiredFitnessMargin < 0) {
