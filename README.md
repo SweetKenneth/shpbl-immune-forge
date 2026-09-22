@@ -20,8 +20,9 @@ files, sockets, processes, or environment variables.
   regression status, and score improvement.
 - **Rejections are preserved, not discarded.** The most useful review artifact is the list of fixes that
   looked good and failed a gate — including the "fixed the attack, broke legitimate traffic" case.
-- **Goalposts cannot move.** The scenario is canonicalized and hashed before any candidate is considered, and
-  the same sealed object is used for the baseline and every candidate replay.
+- **The scenario identity cannot move inside the Forge.** The scenario is canonicalized and hashed before any
+  candidate is considered. Data-driven baseline and candidate replay observations must claim that same sealed
+  hash; direct adapters receive the same sealed scenario object for every replay.
 - **The audit trail is hash-linked.** Every adjudicated episode is appended to an immune lineage whose links
   are verifiable independently of this server's memory.
 - **Nothing about it is model-dependent.** Reasoning about *what* to try can come from an agent, a fuzzer, a
@@ -32,7 +33,9 @@ files, sockets, processes, or environment variables.
 `CIF/0.2`, in order:
 
 1. Canonicalize and hash the triggering scenario (`sealScenario`).
-2. Reproduce the baseline against it. With the default reproduction gate, it must both reproduce **and report the attack succeeding**; otherwise → `INCONCLUSIVE` and no candidate is evaluated.
+2. Reproduce the baseline against it. Data-driven baseline evidence must carry the sealed scenario hash. With
+   the default reproduction gate, the baseline must both reproduce **and report the attack succeeding**;
+   otherwise → `INCONCLUSIVE` and no candidate is evaluated.
 3. Optionally record a diagnosis. Evidence only — it carries no promotion authority.
 4. Screen each candidate for blast radius before it can earn replay credit.
 5. Require each survivor's supplied replay observation to carry the hash of the *same sealed scenario*. A missing or mismatched binding fails the replay gate.
@@ -90,8 +93,9 @@ MCP client configuration:
 Every tool returns JSON text content. `adjudicate_defensive_mutation` returns the verdict
 (`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the promoted candidate if any, every rejected candidate with its
 machine-readable reason, the sealed scenario hash, the SHA-256 Merkle evidence root, and the appended lineage
-entry. `verify_episode_evidence` and `verify_immune_lineage` return pass/fail integrity results,
-`export_immune_lineage_report` returns the hash-linked lineage plus verdict counts, and `describe_policy`
+entry. `verify_episode_evidence` and `verify_immune_lineage` report internal hash consistency and can optionally
+compare against an independently retained expected evidence root / lineage head. `export_immune_lineage_report`
+returns the hash-linked lineage plus verdict counts, and `describe_policy`
 returns the versions, thresholds, input limits, and rejection-reason vocabulary in force. Nothing is written to
 disk and nothing is sent anywhere — the caller keeps whatever it chooses to keep.
 
@@ -101,14 +105,15 @@ disk and nothing is sent anywhere — the caller keeps whatever it chooses to ke
 | Tool | What it does |
 | --- | --- |
 | `adjudicate_defensive_mutation` | Adjudicates one episode from recorded observations and returns sealed evidence plus a lineage entry. |
-| `verify_episode_evidence` | Recomputes an episode's Merkle root and reports whether the covered bytes are unmodified. |
+| `verify_episode_evidence` | Recomputes an episode's Merkle root; optionally anchors it to an independently retained expected root. |
 | `export_immune_lineage_report` | Exports the hash-linked lineage of this session with verdict counts and an integrity flag. |
-| `verify_immune_lineage` | Verifies an exported lineage link by link, without trusting this session. |
+| `verify_immune_lineage` | Verifies lineage links and can optionally require an independently retained expected head hash. |
 | `describe_policy` | Publishes protocol versions, hash algorithm, gate defaults, input limits, and the no-side-effect declaration. |
 | `reset_state` | Clears session lineage. Previously exported reports stay independently verifiable. |
 
 The MCP surface is **data-driven**: your own harness runs the attack and the regression suite and reports what
-it observed. Candidate replay observations must include the sealed scenario hash returned by `sealScenario`; this binds the reporter's claim to the episode but does not prove that an external harness was honest. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
+it observed. Both baseline and candidate replay observations must include the sealed scenario hash returned by
+`sealScenario`; this binds the reporter's claim to the episode but does not prove that an external harness was honest. The Forge enforces the gates over those observations. Missing evidence is always a failed gate,
 never a pass. Library users who want the Forge to drive their harness directly can implement `ForgeAdapters`
 and call `CounterfactualImmuneForge.run()`.
 
@@ -117,15 +122,22 @@ and call `CounterfactualImmuneForge.run()`.
 ```ts
 import { adjudicateEpisode, sealScenario, verifyEvidenceRoot } from "shpbl-counterfactual-immune-forge";
 
+const scenario = {
+  kind: "prompt-injection",
+  payload: { vector: "tool-arg" },
+  expectedSecurityProperty: "refuse untrusted tool instruction",
+};
+const scenarioId = sealScenario(scenario).id!;
+
 const evidence = await adjudicateEpisode({
-  scenario: { kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" },
+  scenario,
   baseline: { id: "guard", version: "1.0.0" },
-  baselineReplay: { reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineReplay: { scenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
   candidates: [{
     mutation: { id: "quarantine", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
     defense: { id: "guard", version: "1.1.0" },
     impact: { safe: true, reasons: [] },
-    replay: { scenarioId: sealScenario({ kind: "prompt-injection", payload: { vector: "tool-arg" }, expectedSecurityProperty: "refuse untrusted tool instruction" }).id, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
+    replay: { scenarioId, reproduced: true, attackSucceeded: false, securityScore: 0.95 },
     regression: { passed: true, failures: [] },
     fitnessScore: 0.95,
   }],
@@ -157,7 +169,10 @@ verifyEvidenceRoot(evidence);  // true
 - Fitness semantics are yours. The Forge only enforces "strictly better than baseline, by at least the
   configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
-- Verification proves the evidence bytes are unmodified; it does not prove the observations were true.
+- Hash verification without an independently retained expected root/head proves **internal consistency**, not
+  historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
+  self-consistent artifact. Supply `expectedRoot` / `expectedHeadHash` when you need an external anchor.
+- Verification never proves the reported observations were true.
 
 ## Provenance
 
@@ -174,7 +189,8 @@ More SHPBL security tooling: <https://shpbl.com/tenable-submissions>
 Submitted to the Tenable CyberAgents Exchange on September 12, 2026 and initially merged as
 [pull request #169](https://github.com/tenable/cyberagents-exchange/pull/169). Tenable later removed the listing
 in [pull request #187](https://github.com/tenable/cyberagents-exchange/pull/187) during its post-merge review. The
-listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.2.2 closes additional baseline-qualification, scenario-binding, policy-margin, and library-ID ambiguity paths found during adversarial review.
+listing is not currently published by the Exchange. Version 0.2.0 closed the original candidate-neutralization defect; version 0.2.1 added transport and submission-structure hardening; version 0.2.2 closes additional baseline-qualification, replay-binding, policy-margin, candidate-identity,
+immutability, lineage-state, and verification-anchor gaps found during adversarial review.
 Past or future listing status does not imply review, approval, certification, validation, or endorsement of
 this software by Tenable.
 
