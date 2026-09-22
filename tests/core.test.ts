@@ -631,3 +631,15 @@ test("a proven baseline still requires a finite fitness score", async () => {
     /INVALID_BASELINE_FITNESS/,
   );
 });
+
+
+test("explicit undefined and sparse-array mutations cannot preserve evidence verification", async () => {
+  const r = await new CounterfactualImmuneForge(adapters()).run({ scenario, baseline });
+
+  const explicitUndefined = { ...r, winnerId: undefined } as any;
+  assert.equal(verifyEvidenceRoot(explicitUndefined), false);
+
+  const sparseTrace = { ...r, baselineReplay: { ...r.baselineReplay, trace: [null] } } as any;
+  sparseTrace.baselineReplay.trace = new Array(1);
+  assert.equal(verifyEvidenceRoot(sparseTrace), false);
+});
