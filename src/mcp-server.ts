@@ -80,7 +80,13 @@ function json(value: unknown, field: string): Json {
       seen.add(v);
       const out: { [k: string]: Json } = {};
       for (const [k, item] of Object.entries(v as Record<string, unknown>)) {
-        if (item !== undefined) out[k] = walk(item, `${path}.${k}`, depth + 1);
+        if (item === undefined) continue;
+        Object.defineProperty(out, k, {
+          value: walk(item, `${path}.${k}`, depth + 1),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       return out;
     }
