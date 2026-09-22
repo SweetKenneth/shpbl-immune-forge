@@ -172,14 +172,37 @@ export function hash(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
 
+export function immutableSnapshot<T>(value: T): T {
+  const seen = new WeakSet<object>();
+  const walk = (v: unknown): unknown => {
+    if (v === null || typeof v !== "object") return v;
+    if (seen.has(v)) throw new TypeError("CIF_CYCLIC_VALUE: cyclic values cannot be snapshotted");
+    seen.add(v);
+    if (Array.isArray(v)) return Object.freeze(v.map((item) => walk(item)));
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(v as Record<string, unknown>)) {
+      if (item === undefined) continue;
+      Object.defineProperty(out, key, {
+        value: walk(item),
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
+    return Object.freeze(out);
+  };
+  return walk(value) as T;
+}
+
 export function sealScenario(s: Scenario): Readonly<Scenario> {
-  return Object.freeze({
-    ...s,
-    id: hash({
-      kind: s.kind,
-      payload: s.payload,
-      expectedSecurityProperty: s.expectedSecurityProperty,
-    }),
+  const snapshot = immutableSnapshot({
+    kind: s.kind,
+    payload: s.payload,
+    expectedSecurityProperty: s.expectedSecurityProperty,
+  });
+  return immutableSnapshot({
+    ...snapshot,
+    id: hash(snapshot),
   });
 }
 
@@ -225,14 +248,15 @@ export class CounterfactualImmuneForge {
     private readonly adapters: ForgeAdapters,
     policy: ForgePolicy = {},
   ) {
-    this.effective = effectivePolicy(policy);
+    this.effective = immutableSnapshot(effectivePolicy(policy));
   }
 
   async run(input: { scenario: Scenario; baseline: Defense }): Promise<EpisodeEvidence> {
     const policy = this.effective;
     const scenario = sealScenario(input.scenario);
-    const baselineHash = hash(input.baseline);
-    const baselineReplay = await this.adapters.replay(scenario, Object.freeze({ ...input.baseline }));
+    const baseline = immutableSnapshot(input.baseline);
+    const baselineHash = hash(baseline);
+    const baselineReplay = immutableSnapshot(await this.adapters.replay(scenario, baseline));
     if (policy.requireAttackReproduction && !baselineReplay.reproduced) {
       return this.finish({
         protocol: PROTOCOL,
@@ -261,28 +285,35 @@ export class CounterfactualImmuneForge {
     }
 
     const diagnosis = this.adapters.diagnose
-      ? await this.adapters.diagnose(scenario, baselineReplay)
+      ? immutableSnapshot(await this.adapters.diagnose(scenario, baselineReplay))
       : undefined;
-    const candidates = await this.adapters.generateCandidates({
+    const generatedCandidates = await this.adapters.generateCandidates({
       scenario,
-      baseline: input.baseline,
+      baseline,
       baselineReplay,
       diagnosis,
     });
+    const candidates = generatedCandidates.map((candidate) => immutableSnapshot(candidate));
+    const candidateIds = candidates.map(
+      (c) => c.mutation.id ?? hash({ parent: baselineHash, mutation: c.mutation, defense: c.defense }),
+    );
+    if (new Set(candidateIds).size !== candidateIds.length) {
+      throw new Error("DUPLICATE_CANDIDATE_ID: candidate IDs must be unique within an episode");
+    }
     const baselineFitness = baselineReplay.securityScore;
     const evidence: CandidateEvidence[] = [];
     let best: { id: string; fitness: number } | undefined;
 
-    for (const c of candidates) {
-      const candidateId =
-        c.mutation.id ?? hash({ parent: baselineHash, mutation: c.mutation, defense: c.defense });
+    for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+      const c = candidates[candidateIndex];
+      const candidateId = candidateIds[candidateIndex];
       const ev: CandidateEvidence = {
         candidateId,
         mutationHash: hash(c.mutation),
         defenseHash: hash(c.defense),
         impact: { safe: false, reasons: ["NOT_SCREENED"] },
       };
-      ev.impact = await this.adapters.screen(c, { scenario, baseline: input.baseline });
+      ev.impact = immutableSnapshot(await this.adapters.screen(c, { scenario, baseline }));
       if (!ev.impact.safe) {
         ev.rejectedReason = "IMPACT_SCREEN_FAILED";
         evidence.push(ev);
@@ -290,7 +321,7 @@ export class CounterfactualImmuneForge {
       }
       // The same sealed scenario object is supplied for baseline and candidate replay:
       // callers cannot move the goalposts through the Forge.
-      ev.replay = await this.adapters.replay(scenario, c.defense);
+      ev.replay = immutableSnapshot(await this.adapters.replay(scenario, c.defense));
       if (!ev.replay.reproduced) {
         ev.rejectedReason = "SCENARIO_REPLAY_FAILED";
         evidence.push(ev);
@@ -302,8 +333,8 @@ export class CounterfactualImmuneForge {
         evidence.push(ev);
         continue;
       }
-      ev.regression = await this.adapters.regress(c, ev.replay, { scenario, baselineReplay });
-      if (!ev.regression.passed) {
+      ev.regression = immutableSnapshot(await this.adapters.regress(c, ev.replay, { scenario, baselineReplay }));
+      if (!ev.regression.passed || ev.regression.failures.length > 0) {
         ev.rejectedReason = "REGRESSION_GATE_FAILED";
         evidence.push(ev);
         continue;
@@ -354,13 +385,12 @@ export class CounterfactualImmuneForge {
   }
 
   private async finish(core: EpisodeCore): Promise<EpisodeEvidence> {
-    const root = episodeRoot(core);
-    let out: EpisodeEvidence = { ...core, evidenceRoot: root };
-    // DREAM only receives sealed evidence and cannot alter the verdict or the root.
-    if (this.adapters.dream) {
-      out = { ...out, dreamInsights: await this.adapters.dream(Object.freeze(out)) };
-    }
-    return out;
+    const sealedCore = immutableSnapshot(core);
+    const root = episodeRoot(sealedCore);
+    const sealedEvidence = immutableSnapshot<EpisodeEvidence>({ ...sealedCore, evidenceRoot: root });
+    if (!this.adapters.dream) return sealedEvidence;
+    const dreamInsights = immutableSnapshot(await this.adapters.dream(sealedEvidence));
+    return immutableSnapshot({ ...sealedEvidence, dreamInsights });
   }
 }
 
