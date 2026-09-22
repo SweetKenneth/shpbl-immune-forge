@@ -28,7 +28,7 @@ function recomputeEvidenceRoot(evidence: any): any {
     hash(core.baselineReplay),
     hash(core.diagnosis ?? null),
     ...core.candidates.map(hash),
-    hash(core.baselineFitness),
+    hash(core.baselineFitness ?? null),
     hash(core.winnerId ?? null),
     hash(core.verdict),
     hash(core.reason),
@@ -603,5 +603,31 @@ test("direct candidates and defenses reject unknown protocol fields", async () =
       baseline: { ...baseline, hiddenAuthority: "yes" } as any,
     }),
     /INVALID_DEFENSE: baseline contains unsupported field hiddenAuthority/,
+  );
+});
+
+
+test("inconclusive baselines do not invoke the fitness evaluator", async () => {
+  const a = adapters();
+  let called = false;
+  a.replay = async () => ({ reproduced: false, attackSucceeded: false, securityScore: 0.2 });
+  a.baselineFitness = () => {
+    called = true;
+    throw new Error("must not run");
+  };
+  const r = await new CounterfactualImmuneForge(a).run({ scenario, baseline });
+  assert.equal(r.verdict, "INCONCLUSIVE");
+  assert.equal(r.reason, "BASELINE_DID_NOT_REPRODUCE");
+  assert.equal(r.baselineFitness, undefined);
+  assert.equal(called, false);
+  assert.equal(verifyEvidenceRoot(r), true);
+});
+
+test("a proven baseline still requires a finite fitness score", async () => {
+  const a = adapters();
+  a.baselineFitness = () => Number.NaN;
+  await assert.rejects(
+    () => new CounterfactualImmuneForge(a).run({ scenario, baseline }),
+    /INVALID_BASELINE_FITNESS/,
   );
 });
