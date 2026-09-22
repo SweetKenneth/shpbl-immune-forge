@@ -578,10 +578,11 @@ export function createLineProcessor(
       buffer += chunk;
       let index = buffer.indexOf("\n");
       while (index !== -1) {
-        const line = buffer.slice(0, index).trim();
+        const rawLine = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
+        const line = rawLine.trim();
         if (line) {
-          if (Buffer.byteLength(line, "utf8") > POLICY.maxRequestBytes) {
+          if (Buffer.byteLength(rawLine, "utf8") > POLICY.maxRequestBytes) {
             queueResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
           } else {
             queue(line);
