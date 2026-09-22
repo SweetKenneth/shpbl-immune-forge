@@ -591,6 +591,7 @@ export function createLineProcessor(
 ) {
   let buffer = "";
   let chain: Promise<void> = Promise.resolve();
+  let lifecycle: "new" | "awaiting-initialized" | "ready" = "new";
   const emit = (value: unknown) => write(JSON.stringify(value) + "\n");
   const queueResponse = (value: unknown): void => {
     chain = chain.then(async () => {
@@ -599,12 +600,57 @@ export function createLineProcessor(
   };
   const queue = (line: string): void => {
     chain = chain.then(async () => {
-      let response: Record<string, unknown> | undefined;
+      let request: unknown;
       try {
-        response = await handleRpc(JSON.parse(line), callTool);
+        request = JSON.parse(line);
       } catch {
-        response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
+        emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
+        return;
       }
+
+      if (typeof request !== "object" || request === null || Array.isArray(request)) {
+        const response = await handleRpc(request, callTool);
+        if (response) emit(response);
+        return;
+      }
+
+      const rpc = request as RpcRequest;
+      const validId =
+        rpc.id === undefined ||
+        rpc.id === null ||
+        typeof rpc.id === "string" ||
+        (typeof rpc.id === "number" && Number.isFinite(rpc.id));
+      if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string" || !validId) {
+        const response = await handleRpc(request, callTool);
+        if (response) emit(response);
+        return;
+      }
+
+      if (rpc.id === undefined) {
+        if (rpc.method === "notifications/initialized" && lifecycle === "awaiting-initialized") {
+          lifecycle = "ready";
+        }
+        await handleRpc(request, callTool);
+        return;
+      }
+
+      if (rpc.method === "initialize") {
+        if (lifecycle !== "new") {
+          emit({ jsonrpc: "2.0", id: rpc.id, error: { code: -32600, message: "server already initialized" } });
+          return;
+        }
+        const response = await handleRpc(request, callTool);
+        if (response && "result" in response) lifecycle = "awaiting-initialized";
+        if (response) emit(response);
+        return;
+      }
+
+      if (lifecycle !== "ready") {
+        emit({ jsonrpc: "2.0", id: rpc.id, error: { code: -32002, message: "Server not initialized" } });
+        return;
+      }
+
+      const response = await handleRpc(request, callTool);
       if (response) emit(response);
     });
   };
