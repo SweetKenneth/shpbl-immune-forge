@@ -45,6 +45,18 @@ test("notifications get no response and unknown methods error", async () => {
   assert.equal(bad.error.code, -32601);
 });
 
+test("invalid JSON-RPC envelopes and unsupported batches fail explicitly", async () => {
+  const call = createHandler();
+  const wrongVersion: any = await handleRpc({ jsonrpc: "1.0", id: 4, method: "ping" }, call);
+  assert.equal(wrongVersion.error.code, -32600);
+  assert.equal(wrongVersion.id, 4);
+  const missingMethod: any = await handleRpc({ jsonrpc: "2.0", id: 5 }, call);
+  assert.equal(missingMethod.error.code, -32600);
+  const batch: any = await handleRpc([{ jsonrpc: "2.0", id: 6, method: "ping" }], call);
+  assert.equal(batch.error.code, -32600);
+  assert.equal(batch.id, null);
+});
+
 test("adjudication through the tool interface promotes, records lineage and verifies", async () => {
   const lineage = new ImmuneLineage();
   const call = createHandler(lineage);
@@ -103,6 +115,26 @@ test("an oversized frame is refused without desynchronising the reader", async (
   await processor.drain();
   assert.equal(JSON.parse(written[0]).error.code, -32600);
   assert.equal(JSON.parse(written[1]).id, 7);
+});
+
+test("an oversized frame cannot swallow an adjacent complete request", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push("x".repeat(POLICY.maxRequestBytes + 1) + "\n" + JSON.stringify({ jsonrpc: "2.0", id: 8, method: "ping" }) + "\n");
+  await processor.drain();
+  assert.equal(JSON.parse(written[0]).error.code, -32600);
+  assert.equal(JSON.parse(written[1]).id, 8);
+});
+
+test("an oversized partial frame is reset before the next request", async () => {
+  const written: string[] = [];
+  const processor = createLineProcessor(createHandler(), (line) => written.push(line.trim()));
+  processor.push("x".repeat(POLICY.maxRequestBytes + 1));
+  processor.push(JSON.stringify({ jsonrpc: "2.0", id: 9, method: "ping" }) + "\n");
+  await processor.drain();
+  assert.equal(written.length, 2);
+  assert.equal(JSON.parse(written[0]).error.code, -32600);
+  assert.equal(JSON.parse(written[1]).id, 9);
 });
 
 test("describe_policy publishes limits and the no-side-effect declaration", async () => {
