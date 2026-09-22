@@ -13,7 +13,7 @@
 7. Mandatory regression gates can reject a candidate even when the attack is stopped. A regression result that
    says `passed: true` while also reporting failures is treated as a failed gate.
 8. Baseline fitness and candidate fitness must be supplied by the same evaluator-defined scoring policy/scale. Candidate fitness must exceed the explicit baseline fitness by the configured non-negative margin; negative margins are invalid policy.
-9. Rejected candidates and reasons remain in episode evidence.
+9. Candidate identity hashes, observed gate evidence, and rejection reasons remain in episode evidence. Full mutation/defense bodies are referenced by hash rather than embedded.
 10. Promotion selects only among candidates that passed every gate. Candidate IDs are unique within an episode,
     and the core library evaluates at most 256 candidates per episode.
 11. The decision evidence is cryptographically committed; covered mutation invalidates verification.
