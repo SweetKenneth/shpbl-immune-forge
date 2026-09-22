@@ -17,17 +17,17 @@ auth_method: "none"
 compatible_clients: ["Claude Code", "Claude Desktop", "Cursor"]
 tools_exposed:
   - name: "adjudicate_defensive_mutation"
-    description: "Adjudicate one defensive-mutation episode from recorded observations and return sealed evidence plus a lineage entry; executes nothing and promotes nothing on its own"
+    description: "Adjudicate one defensive-mutation episode from recorded observations: impact screen, same-scenario replay, mandatory regression gates and positive fitness delta, then seal the decision as a Merkle evidence root. Executes nothing and promotes nothing on its own."
   - name: "verify_episode_evidence"
-    description: "Recompute an episode's Merkle evidence root and report whether the covered bytes are unmodified"
+    description: "Recompute the Merkle evidence root of a sealed episode. Optionally compare it to an independently retained expected root; without one, verification proves internal consistency only."
   - name: "export_immune_lineage_report"
-    description: "Export the hash-linked lineage of every episode adjudicated in this session with verdict counts and an integrity flag"
+    description: "Export the hash-linked lineage of every episode adjudicated in this session, with verdict counts and an integrity flag."
   - name: "verify_immune_lineage"
-    description: "Verify an exported lineage entry list link by link without trusting this session's state"
+    description: "Verify an exported lineage entry list link by link. Optionally compare the computed head to an independently retained expected head hash."
   - name: "describe_policy"
-    description: "Return protocol versions, hash algorithm, default gate thresholds, input limits, rejection reasons and the declared absence of side effects"
+    description: "Return the protocol versions, hash algorithm, default gate thresholds, input limits, rejection reasons and the declared absence of side effects."
   - name: "reset_state"
-    description: "Clear this session's lineage; previously exported reports remain independently verifiable"
+    description: "Clear this session's lineage. Previously exported reports remain independently verifiable."
 resources_exposed: []
 prompts_exposed: []
 ---
