@@ -88,9 +88,9 @@ export async function adjudicateEpisode(input: EpisodeInput): Promise<EpisodeEvi
     // The baseline replay happens before any candidate is screened, so an unset in-flight
     // candidate identifies the baseline. Once screening fixes a candidate, that candidate's own
     // recorded replay is used — never another candidate that happens to share a defense version.
-    replay: async (sealedScenario, defense) => {
-      if (inFlight) {
-        const observed = inFlight.replay ?? MISSING_REPLAY;
+    replay: async (sealedScenario, defense, candidate) => {
+      if (candidate) {
+        const observed = observations.get(candidateKey(candidate))?.replay ?? MISSING_REPLAY;
         if (observed.scenarioId !== sealedScenario.id) return MISSING_REPLAY;
         return observed;
       }
