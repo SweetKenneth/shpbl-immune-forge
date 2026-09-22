@@ -93,8 +93,9 @@ MCP client configuration:
 Every tool returns JSON text content. `adjudicate_defensive_mutation` returns the verdict
 (`PROMOTED` / `REJECTED` / `INCONCLUSIVE`), the winning candidate ID if any, each candidate's mutation/defense
 hashes and gate observations, machine-readable rejection reasons, the sealed scenario hash, the SHA-256 Merkle
-evidence root, and the appended lineage entry. `verify_episode_evidence` and `verify_immune_lineage` report internal CIF/0.3 semantic-and-hash consistency and can optionally
-compare against an independently retained expected evidence root / lineage head. `export_immune_lineage_report`
+evidence root, and the appended lineage entry. `verify_episode_evidence` reports internal CIF/0.3 evidence semantic-and-hash consistency; `verify_immune_lineage`
+reports CIF-LINEAGE/0.1 entry-semantic and chain-hash consistency. Both can optionally compare against an
+independently retained expected evidence root / lineage head. `export_immune_lineage_report`
 returns the hash-linked lineage plus verdict counts, and `describe_policy`
 returns the versions, thresholds, input limits, and rejection-reason vocabulary in force. Nothing is written to
 disk and nothing is sent anywhere — the caller keeps whatever it chooses to keep.
@@ -173,7 +174,7 @@ verifyEvidenceRoot(evidence);  // true
   the evaluator-defined scale. Inconclusive baselines never invoke or require fitness scoring. The Forge
   enforces only "strictly better than baseline, by at least the configured margin".
 - Session lineage is in memory. Persist exported reports yourself if you need durable history.
-- CIF verification without an independently retained expected root/head proves **internal semantic-and-hash consistency**, not
+- Evidence/lineage verification without an independently retained expected root/head proves **internal protocol-and-hash consistency**, not
   historical authenticity: someone who can replace both an artifact and its embedded hash can recompute a new
   self-consistent artifact. Supply `expectedRoot` / `expectedHeadHash` when you need an external anchor.
 - Verification never proves the reported observations were true.
