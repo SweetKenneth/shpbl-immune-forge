@@ -15,7 +15,7 @@ import {
 import { ImmuneLineage, verifyLineage, type LineageEntry, type LineageReport } from "./lineage.js";
 
 export const SERVER_NAME = "shpbl-counterfactual-immune-forge";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.2.1";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
 export const POLICY = {
@@ -433,11 +433,19 @@ interface RpcRequest {
 }
 
 export async function handleRpc(
-  request: RpcRequest,
+  request: unknown,
   callTool: ReturnType<typeof createHandler>,
 ): Promise<Record<string, unknown> | undefined> {
-  const { id, method, params } = request;
-  if (id === undefined || id === null) return undefined; // notification
+  if (typeof request !== "object" || request === null || Array.isArray(request)) {
+    return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } };
+  }
+  const rpc = request as RpcRequest;
+  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
+    const invalidId = typeof rpc.id === "string" || typeof rpc.id === "number" || rpc.id === null ? rpc.id : null;
+    return { jsonrpc: "2.0", id: invalidId, error: { code: -32600, message: "invalid request" } };
+  }
+  const { id, method, params } = rpc;
+  if (id === undefined) return undefined; // notification
   const reply = (result: unknown) => ({ jsonrpc: "2.0", id, result });
   switch (method) {
     case "initialize":
@@ -475,30 +483,36 @@ export function createLineProcessor(
   let buffer = "";
   let chain: Promise<void> = Promise.resolve();
   const emit = (value: unknown) => write(JSON.stringify(value) + "\n");
+  const queue = (line: string): void => {
+    chain = chain.then(async () => {
+      let response: Record<string, unknown> | undefined;
+      try {
+        response = await handleRpc(JSON.parse(line), callTool);
+      } catch {
+        response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
+      }
+      if (response) emit(response);
+    });
+  };
   return {
     push(chunk: string): void {
       buffer += chunk;
-      if (buffer.length > POLICY.maxRequestBytes) {
-        buffer = "";
-        emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
-        return;
-      }
       let index = buffer.indexOf("\n");
       while (index !== -1) {
         const line = buffer.slice(0, index).trim();
         buffer = buffer.slice(index + 1);
         if (line) {
-          chain = chain.then(async () => {
-            let response: Record<string, unknown> | undefined;
-            try {
-              response = await handleRpc(JSON.parse(line) as RpcRequest, callTool);
-            } catch {
-              response = { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } };
-            }
-            if (response) emit(response);
-          });
+          if (Buffer.byteLength(line, "utf8") > POLICY.maxRequestBytes) {
+            emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
+          } else {
+            queue(line);
+          }
         }
         index = buffer.indexOf("\n");
+      }
+      if (Buffer.byteLength(buffer, "utf8") > POLICY.maxRequestBytes) {
+        buffer = "";
+        emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "request too large" } });
       }
     },
     drain(): Promise<void> {
