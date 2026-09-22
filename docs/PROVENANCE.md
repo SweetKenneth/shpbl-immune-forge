@@ -13,7 +13,7 @@ skipped and none can be reordered. The novelty is the enforced ordering plus the
 candidates, not any individual step.
 
 ## Public IP surface
-Released publicly: the protocol shape (`CIF/0.1`), the gate ordering, the evidence-root construction, the
+Released publicly: the protocol shape (`CIF/0.2`), the gate ordering, the evidence-root construction, the
 MCP tool surface, and this implementation. Not released: any SHPBL private engine, corpus, harvested body,
 scoring internals, or catalog material. The public bytes were written for release; nothing was copied out of
 the private library.
@@ -23,12 +23,14 @@ Zero runtime dependencies. Platform imports limited to `node:crypto`. No filesys
 environment access anywhere in `src/` — asserted by `tests/disclosure.test.ts`.
 
 ## Verification
-- `npm test` — build plus 44 conformance, adversarial, boundary and MCP handshake tests.
+- `npm test` — build plus 47 conformance, adversarial, boundary and MCP handshake tests.
 - `npm run typecheck` — strict TypeScript, no emit.
 - `docs/RELEASE-MANIFEST.md` — SHA-256 of every released file.
 
 ## Tenable status
-Submitted to the Tenable CyberAgents Exchange on 2026-09-12 and merged as pull request #169
-(<https://github.com/tenable/cyberagents-exchange/pull/169>). Acceptance of a community listing does not imply
-review, approval, certification, validation, or endorsement of this software by Tenable. The public repository
-is <https://github.com/SweetKenneth/shpbl-immune-forge>.
+Submitted to the Tenable CyberAgents Exchange on 2026-09-12 and initially merged as pull request #169
+(<https://github.com/tenable/cyberagents-exchange/pull/169>). Tenable later removed the listing in pull request
+#187 (<https://github.com/tenable/cyberagents-exchange/pull/187>) during its post-merge review. Version 0.2.0
+closed a promotion-soundness gap found in the original implementation; version 0.2.1 hardens the transport and
+current submission structure. The listing is not currently published by the Exchange. The public repository is
+<https://github.com/SweetKenneth/shpbl-immune-forge>.
