@@ -11,6 +11,7 @@ const base: EpisodeInput = {
   scenario: episodeScenario,
   baseline: { id: "guard", version: "1.0.0" },
   baselineReplay: { scenarioId: sealedScenarioId, reproduced: true, attackSucceeded: true, securityScore: 0.2 },
+  baselineFitness: 0.2,
   candidates: [
     {
       mutation: { id: "cand-a", description: "quarantine tool-sourced instructions", patch: { rule: "quarantine" } },
@@ -214,4 +215,17 @@ test("lineage cap prevents exporting more entries than the verifier accepts", as
   assert.equal(report.entries.length, 2);
   assert.equal(report.intact, true);
   assert.equal(verifyLineage(report.entries, report.headHash), true);
+});
+
+
+test("data-driven baseline fitness is independent of replay securityScore and controls the delta gate", async () => {
+  const r = await adjudicateEpisode({
+    ...base,
+    baselineReplay: { ...base.baselineReplay, securityScore: 0.99 },
+    baselineFitness: 10,
+    candidates: [{ ...base.candidates[0], fitnessScore: 9 }],
+  });
+  assert.equal(r.baselineFitness, 10);
+  assert.equal(r.verdict, "REJECTED");
+  assert.equal(r.candidates[0].rejectedReason, "NO_PROVEN_IMPROVEMENT");
 });
